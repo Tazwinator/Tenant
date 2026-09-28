@@ -182,3 +182,39 @@ func TestClosest(t *testing.T) {
 		t.Errorf("closest(kubectl) = %q, want nothing", got)
 	}
 }
+
+// Hand-offs belong to the shell that got them: another terminal's prompt
+// must not eat this one's ghost or its title pop.
+func TestHandoffsPerShell(t *testing.T) {
+	s := act1(t)
+	now := time.Now()
+	st := state.New(1, "normal", now)
+	g := &Engine{Story: s, Pace: sched.Get("normal"), List: simList}
+
+	a := baseEnv(now)
+	a.Pid, a.Styled, a.Cmd, a.Shape = "100", true, "true", mech.ParseShape("-")
+	st.Force, st.ForceText = "history.ghost", "ls  # hello"
+	if eff := g.Tick(st, a); len(eff.Acts) != 1 || eff.Acts[0].Verb != "ghost" {
+		t.Fatalf("ghost not armed: %+v", eff)
+	}
+	st.Force, st.ForceText = "title.whisper", "hello"
+	b := baseEnv(now.Add(time.Second))
+	b.Pid, b.Styled, b.Cmd, b.Shape = "200", true, "true", mech.ParseShape("-")
+	if eff := g.Tick(st, b); !eff.Title {
+		t.Fatalf("title not pushed in shell b: %+v", eff)
+	}
+	if h := st.Handoffs["100"]; h == nil || h.Ghost != "ls  # hello" {
+		t.Fatalf("shell b's prompt ate shell a's ghost: %+v", st.Handoffs)
+	}
+	a.Now = now.Add(2 * time.Second)
+	if eff := g.Tick(st, a); strings.Contains(eff.Say, mech.TitlePop) {
+		t.Fatal("shell a popped shell b's title")
+	}
+	if st.Handoffs["100"] != nil {
+		t.Fatal("shell a's spent ghost wasn't cleared")
+	}
+	b.Now = now.Add(3 * time.Second)
+	if eff := g.Tick(st, b); !strings.Contains(eff.Say, mech.TitlePop) {
+		t.Fatal("shell b didn't pop its own title")
+	}
+}

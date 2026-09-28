@@ -23,12 +23,14 @@ honest log of everything it has looked at, and hands it over whenever you ask.
 | I7 | The audit log is complete and truthful | Every listing goes through `audit.ListDir`, which writes the log entry **before** reading. `confess` prints the log verbatim; the story can only add an epilogue after it. |
 | I8 | Inert unless started, as root, with `TENANT_OFF=1`, outside `$HOME`, and during a git rebase, merge or bisect; `evict` works in every shell at the next prompt | A sentinel file checked in pure shell; EUID checks in both hook and binary; guards in the engine; integration tests |
 | I9 | Anything from your filesystem that is printed is sanitised | `term.Clean` strips C0 and C1 controls, escape sequences, bidi and zero-width characters, and caps the length. Tested for every mechanic. |
+| I10 | A ghost command left on your line is harmless if you press Enter | `mech.HarmlessCommand`: only `cd`, `ls`, `pwd`, `true` or `tenant`, arguments of plain characters only (so a directory called `x$(touch pwned)` can't be one), and a comment in plain words. Anything else isn't shown. Unit and pty tests. |
 
 ## Exactly what it reads
 
 - The **names** of entries (and whether each is a directory) in directories under
   `$HOME`, only when a beat that's about to fire needs them, and at most 256 per
-  directory. Each listing is logged, and the names go into `seen.json`.
+  directory. Each listing is logged, and the names go into `seen.json`. A symlink
+  that leads out of `$HOME` is refused even without Landlock.
 - The **first word** of each command you run, worked out in the shell. The full
   command line never reaches the binary. On bash it comes from the shell's in-memory
   `history 1`; the history file is never read. Commands started with a space are
@@ -47,8 +49,10 @@ honest log of everything it has looked at, and hands it over whenever you ask.
 
 Only `active`, `state.json`, `seen.json`, `audit.log`, `lock` and temporary files
 for atomic writes, all in `~/.local/state/tenant`. `evict` deletes them and then the
-directory. The hook exports one environment variable, `TENANT_HOOK=bash|zsh`, which
-`doctor` uses to tell whether the hook is loaded.
+directory. The hook exports one environment variable, `TENANT_HOOK`, which `doctor`
+uses to tell whether the hook is loaded (`bash`, `zsh`, or
+`bash-exported-prompt-command` when it chose not to attach; see
+[ARCHITECTURE](ARCHITECTURE.md#shell-hooks)).
 
 ## Landlock sandbox
 
@@ -83,7 +87,12 @@ right the kernel knows about (ABI 1 to 7), so anything not granted is denied:
   otherwise), so a directory called `` x$(touch pwned)`touch pwned2`%F{red}a `` shows
   up as itself. The integration tests use exactly that name.
 - **Assignment only.** Ghost and time text reach the shell as `var=$(tenant …)` and
-  are rejected if they contain control characters.
+  are rejected if they contain control characters. Ghost text must also pass I10.
+- **Your shell options can't bend it.** Every bash function returns 0 or the status
+  it was given, so `set -e` never exits your shell because of tenant, and `set -u`
+  finds nothing unset. Every zsh function sets its own options locally, so
+  `ksharrays`, `globsubst`, `nounset`, `errexit` and `warncreateglobal` don't change
+  what it does. Tested in both shells.
 - **`$?` preserved**, checked before start, while active and after evict.
 
 ## The audit log

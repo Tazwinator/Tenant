@@ -18,7 +18,10 @@ import (
 	"github.com/Tazwinator/Tenant/internal/term"
 )
 
-var cmdName = regexp.MustCompile(`^[A-Za-z0-9._+:@-]{1,40}$`)
+var (
+	cmdName = regexp.MustCompile(`^[A-Za-z0-9._+:@-]{1,40}$`)
+	pidRE   = regexp.MustCompile(`^[0-9]{1,10}$`)
+)
 
 // deadline is how long a hook call may take before it gives up and does
 // nothing. The prompt matters more than the story.
@@ -61,6 +64,7 @@ func cmdHook(args []string) int {
 	fl := flag.NewFlagSet("_hook", flag.ContinueOnError)
 	fl.SetOutput(io.Discard)
 	sh := fl.String("shell", "bash", "")
+	pid := fl.String("pid", "0", "")
 	status := fl.Int("status", 0, "")
 	cmd := fl.String("cmd", "", "")
 	shape := fl.String("shape", "-", "")
@@ -76,8 +80,11 @@ func cmdHook(args []string) int {
 	if !cmdName.MatchString(*cmd) {
 		*cmd = ""
 	}
+	if !pidRE.MatchString(*pid) {
+		*pid = "0"
+	}
 
-	time.AfterFunc(deadline(), func() { os.Exit(0) })
+	timer := time.AfterFunc(deadline(), func() { os.Exit(0) })
 	e, err := setup(true)
 	if err != nil || !e.fs.Active() {
 		return 0
@@ -91,6 +98,9 @@ func cmdHook(args []string) int {
 		return 0
 	}
 	defer unlock()
+	if !e.fs.Active() { // evicted while we waited for the lock
+		return 0
+	}
 	st, err := state.Load(e.fs)
 	if err != nil {
 		return 0
@@ -98,8 +108,10 @@ func cmdHook(args []string) int {
 	g := &engine.Engine{Story: s, Pace: sched.Get(st.Pace), List: e.fs.ListDir, Exists: e.fs.Exists}
 	env := buildEnv(e.paths, kind, *sh, *status, *cmd, *shape, *first == 1, *cols, *caps)
 	env.TTY = e.fs.TTY()
+	env.Pid = *pid
 	eff := g.Tick(st, env)
-	if state.Save(e.fs, st) != nil {
+	// Past this point nothing may be cut short: what is saved gets shown.
+	if !timer.Stop() || state.Save(e.fs, st) != nil {
 		return 0
 	}
 	if eff.Say != "" {
@@ -121,13 +133,19 @@ func buildEnv(p audit.Paths, kind, sh string, status int, cmd, shape string, fir
 	}
 }
 
-// cmdHandoff prints text the last prompt left for the shell (the ghost
+// cmdHandoff prints text the last prompt left for this shell (the ghost
 // command, or the time), once.
-func cmdHandoff(what string) int {
+func cmdHandoff(what string, args []string) int {
 	if isRoot() {
 		return 0
 	}
-	time.AfterFunc(deadline(), func() { os.Exit(0) })
+	pid := "0"
+	for i, a := range args {
+		if a == "--pid" && i+1 < len(args) && pidRE.MatchString(args[i+1]) {
+			pid = args[i+1]
+		}
+	}
+	timer := time.AfterFunc(deadline(), func() { os.Exit(0) })
 	e, err := setup(false)
 	if err != nil || !e.fs.Active() {
 		return 0
@@ -141,14 +159,18 @@ func cmdHandoff(what string) int {
 	if err != nil {
 		return 0
 	}
+	h := st.Handoffs[pid]
+	if h == nil {
+		return 0
+	}
 	var out string
 	switch what {
 	case "ghost":
-		out, st.Ghost = st.Ghost, ""
+		out, h.Ghost = h.Ghost, ""
 	case "time":
-		out, st.TimeText = st.TimeText, ""
+		out, h.Time = h.Time, ""
 	}
-	if out == "" || state.Save(e.fs, st) != nil {
+	if out == "" || !timer.Stop() || state.Save(e.fs, st) != nil {
 		return 0
 	}
 	fmt.Println(term.Clean(out, 120))

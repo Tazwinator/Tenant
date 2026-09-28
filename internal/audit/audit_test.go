@@ -71,3 +71,22 @@ func TestEvict(t *testing.T) {
 		t.Fatal("evicting twice should be fine:", err)
 	}
 }
+
+func TestListDirSymlinkOutOfHome(t *testing.T) {
+	f := testFS(t)
+	outside := t.TempDir()
+	os.WriteFile(filepath.Join(outside, "secret-name"), nil, 0o644)
+	link := filepath.Join(f.P.Home, "escape")
+	if err := os.Symlink(outside, link); err != nil {
+		t.Skip(err)
+	}
+	if _, err := f.ListDir(link); err == nil {
+		t.Fatal("followed a symlink out of $HOME")
+	}
+	inside := filepath.Join(f.P.Home, "inner")
+	os.Mkdir(inside, 0o755)
+	os.Symlink(inside, filepath.Join(f.P.Home, "alias"))
+	if _, err := f.ListDir(filepath.Join(f.P.Home, "alias")); err != nil {
+		t.Fatalf("a symlink that stays inside $HOME was refused: %v", err)
+	}
+}

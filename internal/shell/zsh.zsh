@@ -6,54 +6,66 @@
 # nothing at all until you run `tenant start`, and nothing as root or with
 # TENANT_OFF set. `tenant evict` switches it off in every shell at the next
 # prompt; then delete the eval line from ~/.zshrc.
+#
+# Every function sets its own options locally, so your setopts (ksharrays,
+# globsubst, nounset, errexit, ...) can't change what it does. Sourcing this
+# again keeps tenant's state and re-attaches the hooks.
 
-if [[ -o interactive && -z ${_tenant_loaded-} ]]; then
+if [[ -o interactive ]]; then
 
-typeset -g _tenant_loaded=1
+if [[ -z ${_tenant_loaded-} ]]; then
+	typeset -g _tenant_loaded=1
+	typeset -gi _tenant_st=0 _tenant_first=1 _tenant_live=0 _tenant_capv=0
+	typeset -g _tenant_cmd='' _tenant_shape=- _tenant_armed='' _tenant_skip=''
+	typeset -g _tenant_up_csi='' _tenant_up_ss3=''
+	typeset -g _tenant_prompt='' _tenant_prompt_mod='' _tenant_rprompt='' _tenant_rprompt_mod=''
+	typeset -g _tenant_pwd='' _tenant_pwda='' _tenant_pwdb='' _tenant_rtime='' _tenant_esc=''
+fi
 typeset -g _tenant_bin=__TENANT_BIN__
 typeset -g _tenant_dir=${XDG_STATE_HOME:-$HOME/.local/state}/tenant
 [[ $_tenant_dir == /* ]] || _tenant_dir=$HOME/.local/state/tenant
-typeset -gi _tenant_st=0 _tenant_first=1 _tenant_live=0 _tenant_capv=0
-typeset -g _tenant_cmd= _tenant_shape=- _tenant_armed= _tenant_up= _tenant_skip=
-typeset -g _tenant_prompt= _tenant_prompt_mod= _tenant_rprompt= _tenant_rprompt_mod=
-typeset -g _tenant_pwd= _tenant_pwdb= _tenant_rtime=
 export TENANT_HOOK=zsh
 
 # Runs first each prompt: keep $? and undo last prompt's change.
 _tenant_status() {
 	_tenant_st=$?
-	if [[ -n $_tenant_prompt_mod && $PROMPT == $_tenant_prompt_mod ]]; then
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
+	if [[ -n $_tenant_prompt_mod && $PROMPT == "$_tenant_prompt_mod" ]]; then
 		PROMPT=$_tenant_prompt
 	fi
-	if [[ -n $_tenant_rprompt_mod && $RPROMPT == $_tenant_rprompt_mod ]]; then
+	if [[ -n $_tenant_rprompt_mod && ${RPROMPT-} == "$_tenant_rprompt_mod" ]]; then
 		RPROMPT=$_tenant_rprompt
 	fi
-	_tenant_prompt_mod= _tenant_rprompt_mod=
+	_tenant_prompt_mod='' _tenant_rprompt_mod=''
 	return $_tenant_st
 }
 
 # Learn the first word of the command about to run. Nothing else about it
 # leaves the shell. Commands starting with a space are skipped when
-# HIST_IGNORE_SPACE is set.
+# HIST_IGNORE_SPACE is set, typos included.
 _tenant_preexec() {
-	_tenant_cmd= _tenant_shape=- _tenant_skip=
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
+	_tenant_cmd='' _tenant_shape=- _tenant_skip=''
 	[[ -e $_tenant_dir/active ]] || return 0
 	if [[ -o hist_ignore_space && $1 == ' '* ]]; then
 		_tenant_skip=1
 		return 0
 	fi
 	_tenant_classify "$1"
+	return 0
 }
 
 _tenant_classify() {
 	emulate -L zsh
+	setopt noerrexit noerrreturn
 	local -a words
 	words=(${(z)1})
-	local w=${words[1]#\\} x a long= color= all= bad=
+	local w=${words[1]-} x a long='' color='' all='' bad=''
+	w=${w#\\}
 	x=$w
-	if (( ${+aliases[$w]} )); then
+	if [[ -n $w ]] && (( ${+aliases[$w]} )); then
 		words=(${(z)aliases[$w]} ${words[2,-1]})
-		x=${words[1]}
+		x=${words[1]-}
 	fi
 	w=${w:t} x=${x:t}
 	[[ $w =~ '^[A-Za-z0-9._+:@-]{1,40}$' ]] || return 0
@@ -63,7 +75,7 @@ _tenant_classify() {
 		[[ $x != ls ]] && color=c
 		for a in ${words[2,-1]}; do
 			case $a in
-			(--color=never|--colour=never) color= ;;
+			(--color=never|--colour=never) color='' ;;
 			(--color*|--colour*) color=c ;;
 			(--icons*) bad=x ;;
 			(--long|--format=long|--format=verbose) long=l ;;
@@ -89,20 +101,23 @@ _tenant_classify() {
 # What this shell can show, as a bitmask (see internal/mech).
 _tenant_caps() {
 	emulate -L zsh
+	setopt noerrexit noerrreturn
 	local c=0 loc=${LC_ALL:-${LC_CTYPE:-${LANG-}}}
 	[[ $PROMPT == *(%~|%/|%d|%1~|%c|%C|%.)* ]] && (( c |= 1 ))
-	[[ -n $_tenant_up ]] && (( c |= 2 ))
+	[[ -n $_tenant_up_csi$_tenant_up_ss3 ]] && (( c |= 2 ))
 	[[ $loc == *[Uu][Tt][Ff](-|)8* ]] && (( c |= 4 ))
 	case ${TERM-} in
 	(xterm*|rxvt*|alacritty*|foot*|kitty*|wezterm*|st-*|konsole*|gnome*|vte*|contour*|ghostty*) (( c |= 8 )) ;;
 	esac
-	[[ -z $RPROMPT ]] && (( c |= 16 ))
-	(( ${+functions[_tenant_cnf]} )) && (( c |= 32 ))
+	[[ -z ${RPROMPT-} ]] && (( c |= 16 ))
+	[[ ${functions[command_not_found_handler]-} == *_tenant_cnf* ]] && (( c |= 32 ))
 	_tenant_capv=$c
+	return 0
 }
 
 # Runs last each prompt, after prompt frameworks have built PROMPT.
 _tenant_precmd() {
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
 	local st=$_tenant_st
 	[[ -n $_tenant_armed ]] && _tenant_disarm
 	if [[ ! -e $_tenant_dir/active ]]; then
@@ -119,8 +134,9 @@ _tenant_precmd() {
 	fi
 	_tenant_live=1
 	_tenant_caps
-	local out verb a b c rc
-	out=$("$_tenant_bin" _hook prompt --shell zsh --status "$st" --cmd "$_tenant_cmd" \
+	local out verb a b c rc line
+	local -a f
+	out=$("$_tenant_bin" _hook prompt --shell zsh --pid "$$" --status "$st" --cmd "$_tenant_cmd" \
 		--shape "$_tenant_shape" --first "$_tenant_first" --cols "${COLUMNS:-80}" --caps "$_tenant_capv")
 	rc=$?
 	if (( rc == 126 || rc == 127 )); then
@@ -128,9 +144,7 @@ _tenant_precmd() {
 		return $st
 	fi
 	_tenant_first=0
-	_tenant_cmd= _tenant_shape=-
-	local line
-	local -a f
+	_tenant_cmd='' _tenant_shape=-
 	for line in ${(f)out}; do
 		f=(${=line})
 		verb=${f[1]-} a=${f[2]-} b=${f[3]-} c=${f[4]-}
@@ -143,106 +157,130 @@ _tenant_precmd() {
 	return $st
 }
 
-# Escape text for use in a prompt: % always, and $ ` \ when PROMPT_SUBST
-# would otherwise expand them, and ! when PROMPT_BANG is set.
+# Escape text for use in a prompt, into _tenant_esc: % always, and ! when
+# PROMPT_BANG is set. (With PROMPT_SUBST, prompts get a variable reference
+# instead, which zsh doesn't expand again.)
 _tenant_escape() {
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
 	local v=${1//\%/%%}
 	[[ -o prompt_bang ]] && v=${v//\!/!!}
-	REPLY=$v
+	_tenant_esc=$v
+	return 0
 }
 
 # prompt.glyph: show the directory with one letter changed, for one prompt.
-# Arguments are integers only.
+# Arguments are integers only: position from the end, the letter there, and
+# the letter to show instead.
 _tenant_glyph() {
-	[[ $1 == <-> && $2 == <-> && $3 == <-> ]] || return
-	(( $2 >= 97 && $2 <= 122 && $3 >= 97 && $3 <= 122 )) || return
-	local p=${(D)PWD} i f=${(#)2} t=${(#)3}
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
+	[[ $1 == <-> && $2 == <-> && $3 == <-> ]] || return 0
+	(( $2 >= 97 && $2 <= 122 && $3 >= 97 && $3 <= 122 )) || return 0
+	local p=${(D)PWD} abs=$PWD f=${(#)2} t=${(#)3} i j
 	i=$(( ${#p} - $1 + 1 ))
-	(( i > 1 )) || return
-	[[ ${p[i]} == $f ]] || return
+	j=$(( ${#abs} - $1 + 1 ))
+	(( i > 1 && j > 1 )) || return 0
+	[[ ${p[i]} == "$f" && ${abs[j]} == "$f" ]] || return 0
 	p[i]=$t
-	_tenant_escape "$p"
-	local full=$REPLY
-	_tenant_escape "${p:t}"
-	local base=$REPLY
+	abs[j]=$t
+	local full base absolute
+	_tenant_escape "$p"; full=$_tenant_esc
+	_tenant_escape "${p:t}"; base=$_tenant_esc
+	_tenant_escape "$abs"; absolute=$_tenant_esc
 	_tenant_prompt=$PROMPT
 	if [[ -o prompt_subst ]]; then
-		_tenant_pwd=$full _tenant_pwdb=$base
-		full='${_tenant_pwd}' base='${_tenant_pwdb}'
+		_tenant_pwd=$full _tenant_pwdb=$base _tenant_pwda=$absolute
+		full='${_tenant_pwd}' base='${_tenant_pwdb}' absolute='${_tenant_pwda}'
 	fi
 	PROMPT=${PROMPT//'%~'/$full}
-	PROMPT=${PROMPT//'%/'/$full}
-	PROMPT=${PROMPT//'%d'/$full}
+	PROMPT=${PROMPT//\%\//$absolute}
+	PROMPT=${PROMPT//'%d'/$absolute}
 	PROMPT=${PROMPT//'%1~'/$base}
 	PROMPT=${PROMPT//'%c'/$base}
 	PROMPT=${PROMPT//'%C'/$base}
 	PROMPT=${PROMPT//'%.'/$base}
 	_tenant_prompt_mod=$PROMPT
+	return 0
 }
 
 # prompt.time: a time in RPROMPT, for one prompt.
 _tenant_time() {
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
 	local t
-	t=$("$_tenant_bin" _text time) || return
-	[[ -n $t && ${#t} -le 20 && $t != *[[:cntrl:]]* ]] || return
+	t=$("$_tenant_bin" _text time --pid "$$") || return 0
+	[[ -n $t && ${#t} -le 20 && $t != *[[:cntrl:]]* ]] || return 0
 	_tenant_escape "$t"
-	_tenant_rprompt=$RPROMPT
+	_tenant_rprompt=${RPROMPT-}
 	if [[ -o prompt_subst ]]; then
-		_tenant_rtime=$REPLY
+		_tenant_rtime=$_tenant_esc
 		RPROMPT='${_tenant_rtime}'
 	else
-		RPROMPT=$REPLY
+		RPROMPT=$_tenant_esc
 	fi
 	_tenant_rprompt_mod=$RPROMPT
+	return 0
 }
 
 # history.ghost: borrow Up for one press. The line is filled in the editor
-# only; it never goes into the history list or the history file.
+# only; it never goes into the history list or the history file. Each Up key
+# is only borrowed if tenant knows what to put back.
 _tenant_ghost() {
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
 	local g
-	g=$("$_tenant_bin" _ghost 2>/dev/null)
+	g=$("$_tenant_bin" _ghost --pid "$$" 2>/dev/null)
 	_tenant_disarm
 	if [[ -n $g && $g != *[[:cntrl:]]* ]]; then
 		BUFFER=$g
 		CURSOR=${#BUFFER}
 	else
-		zle $_tenant_up
+		zle ${_tenant_up_csi:-${_tenant_up_ss3:-up-line-or-history}}
 	fi
+	return 0
 }
 zle -N _tenant_ghost
 
 _tenant_arm() {
-	[[ -n $_tenant_up ]] || return
-	bindkey '^[[A' _tenant_ghost
-	bindkey '^[OA' _tenant_ghost
-	_tenant_armed=1
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
+	[[ -n $_tenant_up_csi ]] && bindkey '^[[A' _tenant_ghost
+	[[ -n $_tenant_up_ss3 ]] && bindkey '^[OA' _tenant_ghost
+	[[ -n $_tenant_up_csi$_tenant_up_ss3 ]] && _tenant_armed=1
+	return 0
 }
 
 _tenant_disarm() {
-	bindkey '^[[A' $_tenant_up
-	bindkey '^[OA' $_tenant_up
-	_tenant_armed=
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
+	[[ -n $_tenant_up_csi ]] && bindkey '^[[A' $_tenant_up_csi
+	[[ -n $_tenant_up_ss3 ]] && bindkey '^[OA' $_tenant_up_ss3
+	_tenant_armed=''
+	return 0
 }
 
-# Which widget Up runs, so it can be put back. Up keys owned by other tools
-# (atuin, mcfly, fzf) are left alone.
+# Which widget each Up key runs, so it can be put back. Only well-known
+# history widgets: keys owned by other tools (atuin, mcfly, fzf) are left
+# alone.
 _tenant_probe_up() {
-	local b w
-	b=$(bindkey '^[[A' 2>/dev/null)
-	w=${b##* }
-	case $w in
-	(up-line-or-history|up-history|up-line-or-beginning-search|up-line-or-search|history-substring-search-up|history-beginning-search-backward)
-		_tenant_up=$w ;;
-	esac
+	emulate -L zsh
+	setopt noerrexit noerrreturn
+	local key w
+	for key in '^[[A' '^[OA'; do
+		w=$(bindkey "$key" 2>/dev/null)
+		w=${w##* }
+		case $w in
+		(up-line-or-history|up-history|up-line-or-beginning-search|up-line-or-search|history-substring-search-up|history-beginning-search-backward) ;;
+		(*) w='' ;;
+		esac
+		if [[ $key == '^[[A' ]]; then _tenant_up_csi=$w; else _tenant_up_ss3=$w; fi
+	done
+	return 0
 }
 
 # notfound.remark: wrap any existing handler, let it run first, unchanged,
 # then let tenant add a line.
-if (( ${+functions[command_not_found_handler]} )); then
+if (( ${+functions[command_not_found_handler]} )) && [[ ${functions[command_not_found_handler]} != *_tenant_cnf* ]]; then
 	functions[_tenant_cnf_orig]=$functions[command_not_found_handler]
 fi
 
 _tenant_cnf() {
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
 	local rc=127
 	if (( ${+functions[_tenant_cnf_orig]} )); then
 		_tenant_cnf_orig "$@"
@@ -253,26 +291,30 @@ _tenant_cnf() {
 	if [[ -e $_tenant_dir/active && -z ${TENANT_OFF-} && -z $_tenant_skip ]] && (( EUID != 0 )); then
 		local w=${1:t}
 		[[ $w =~ '^[A-Za-z0-9._+:@-]{1,40}$' ]] &&
-			"$_tenant_bin" _hook notfound --shell zsh --cmd "$w" --caps "$_tenant_capv" >/dev/null
+			"$_tenant_bin" _hook notfound --shell zsh --pid "$$" --cmd "$w" --caps "$_tenant_capv" >/dev/null
 	fi
 	return $rc
 }
 
 command_not_found_handler() { _tenant_cnf "$@" }
 
-# Put everything back the way it was.
+# Put everything back the way it was. Only undoes what is still tenant's:
+# a not-found handler defined later is left alone.
 _tenant_unload() {
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset noerrexit noerrreturn
 	[[ -n $_tenant_armed ]] && _tenant_disarm
-	if [[ -n $_tenant_prompt_mod && $PROMPT == $_tenant_prompt_mod ]]; then
+	if [[ -n $_tenant_prompt_mod && $PROMPT == "$_tenant_prompt_mod" ]]; then
 		PROMPT=$_tenant_prompt
 	fi
-	if [[ -n $_tenant_rprompt_mod && $RPROMPT == $_tenant_rprompt_mod ]]; then
+	if [[ -n $_tenant_rprompt_mod && ${RPROMPT-} == "$_tenant_rprompt_mod" ]]; then
 		RPROMPT=$_tenant_rprompt
 	fi
-	if (( ${+functions[_tenant_cnf_orig]} )); then
-		functions[command_not_found_handler]=$functions[_tenant_cnf_orig]
-	else
-		unfunction command_not_found_handler 2>/dev/null
+	if [[ ${functions[command_not_found_handler]-} == *_tenant_cnf* ]]; then
+		if (( ${+functions[_tenant_cnf_orig]} )); then
+			functions[command_not_found_handler]=$functions[_tenant_cnf_orig]
+		else
+			unfunction command_not_found_handler 2>/dev/null
+		fi
 	fi
 	precmd_functions=(${precmd_functions:#(_tenant_status|_tenant_precmd)})
 	preexec_functions=(${preexec_functions:#_tenant_preexec})
@@ -282,13 +324,18 @@ _tenant_unload() {
 		_tenant_probe_up _tenant_cnf _tenant_unload 2>/dev/null
 	(( ${+functions[_tenant_cnf_orig]} )) && unfunction _tenant_cnf_orig
 	unset _tenant_bin _tenant_dir _tenant_st _tenant_first _tenant_live _tenant_capv \
-		_tenant_cmd _tenant_shape _tenant_armed _tenant_up _tenant_prompt _tenant_prompt_mod \
-		_tenant_rprompt _tenant_rprompt_mod _tenant_pwd _tenant_pwdb _tenant_rtime \
-		_tenant_skip _tenant_loaded TENANT_HOOK
+		_tenant_cmd _tenant_shape _tenant_armed _tenant_up_csi _tenant_up_ss3 _tenant_prompt \
+		_tenant_prompt_mod _tenant_rprompt _tenant_rprompt_mod _tenant_pwd _tenant_pwda \
+		_tenant_pwdb _tenant_rtime _tenant_esc _tenant_skip _tenant_loaded TENANT_HOOK
+	return 0
 }
 
-_tenant_probe_up
-precmd_functions=(_tenant_status $precmd_functions _tenant_precmd)
-preexec_functions=($preexec_functions _tenant_preexec)
+# Attach (again): first and last in precmd, last in preexec.
+() {
+	setopt localoptions noksharrays noshwordsplit noglobsubst nowarncreateglobal unset
+	[[ -n $_tenant_armed ]] || _tenant_probe_up
+	precmd_functions=(_tenant_status ${precmd_functions:#(_tenant_status|_tenant_precmd)} _tenant_precmd)
+	preexec_functions=(${preexec_functions:#_tenant_preexec} _tenant_preexec)
+}
 
 fi

@@ -17,6 +17,9 @@ Work from `master`.
 - Never wrap, alias or replace user commands.
 - `confess` output is never altered by the story. `evict` is always out of character.
 - Hooks are inert without the `active` sentinel, as root, and with `TENANT_OFF=1`.
+- Ghost text must pass `mech.HarmlessCommand`: it is one Enter away from running.
+- Hook functions return 0 or the status they were given (bash `set -eu`), and zsh
+  functions set their own `localoptions`. Both are covered by integration tests.
 
 ## Build and test
 

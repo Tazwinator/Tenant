@@ -213,6 +213,19 @@ func (f *FS) ListDir(dir string) ([]Name, error) {
 	if !filepath.IsAbs(dir) || !f.P.UnderHome(dir) {
 		return nil, fmt.Errorf("audit: %s is outside $HOME", dir)
 	}
+	// A symlink under $HOME can point anywhere. Landlock would refuse, but
+	// not every kernel has Landlock, so check where it really leads.
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, err
+	}
+	home, err := filepath.EvalSymlinks(f.P.Home)
+	if err != nil {
+		return nil, err
+	}
+	if real != home && !strings.HasPrefix(real, home+"/") {
+		return nil, fmt.Errorf("audit: %s leads outside $HOME", dir)
+	}
 	if err := f.Record("list", f.P.Tilde(dir)+" (names only)"); err != nil {
 		return nil, err
 	}
@@ -315,19 +328,27 @@ func (f *FS) Evict() error {
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	ents, err := os.ReadDir(f.P.State)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	for _, e := range ents {
-		if err := os.RemoveAll(filepath.Join(f.P.State, e.Name())); err != nil {
+	// A hook that was already running may write one last file; go round
+	// again until the directory is really empty.
+	for try := 0; ; try++ {
+		ents, err := os.ReadDir(f.P.State)
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
 			return err
 		}
+		for _, e := range ents {
+			if err := os.RemoveAll(filepath.Join(f.P.State, e.Name())); err != nil {
+				return err
+			}
+		}
+		err = os.Remove(f.P.State)
+		if err == nil || errors.Is(err, os.ErrNotExist) || try == 20 {
+			return err
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	return os.Remove(f.P.State)
 }
 
 // StateExists reports whether the state directory is present at all.

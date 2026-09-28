@@ -111,6 +111,25 @@ count as story progress.**
 `_force <mechanic> [text]` and `_invite` exist so the teaser can be recorded from the
 real binary.
 
+**D25. Ghost commands are validated, not trusted.**
+A review found that `cd {{first_seen.dir}}` in a ghost could run a command hidden in
+a directory name if the player pressed Up and then Enter. Ghosts now have to pass a
+strict allowlist (I10), whatever the story or a story pack says.
+
+**D26. Hand-offs are per shell.**
+The ghost, the time text and title pops are keyed by the shell's PID, so terminals
+side by side can't eat each other's effects.
+
+**D27. The hooks must survive hostile settings.**
+bash under `set -eu`, zsh with `ksharrays`, `globsubst`, `nounset`, `errexit` or
+`warncreateglobal`, re-sourced rc files, and bash-preexec folding `PROMPT_COMMAND`.
+Each case has a test. bash leaves do-nothing stand-ins after evict, rather than risk
+a "command not found" at every prompt.
+
+**D28. An exported `PROMPT_COMMAND` means tenant doesn't attach.**
+Turning it into an array would silently stop child processes inheriting it. It's
+better to stay out and have `doctor` explain.
+
 ## Open questions
 
 **Q2. What does Zireael's bash setup look like?**

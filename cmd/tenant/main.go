@@ -48,9 +48,9 @@ func run(args []string) int {
 	case "_hook":
 		return cmdHook(rest)
 	case "_ghost":
-		return cmdHandoff("ghost")
+		return cmdHandoff("ghost", rest)
 	case "_text":
-		return cmdHandoff("time")
+		return cmdHandoff("time", rest)
 	case "_force", "_sim", "_schedule", "_invite":
 		if os.Getenv("TENANT_DEV") != "1" {
 			fmt.Fprintln(os.Stderr, "tenant: developer command; set TENANT_DEV=1 (contains spoilers)")

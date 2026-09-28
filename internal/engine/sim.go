@@ -121,7 +121,7 @@ func Simulate(story *script.Story, p sched.Pace, prof Profile, seed uint64, days
 					cwd = dirs[rng.IntN(len(dirs))]
 				}
 				env := &mech.Env{
-					Now: t, Shell: "bash", Kind: "prompt", Cmd: cmd, Shape: mech.ParseShape(shape),
+					Now: t, Shell: "bash", Pid: "1", Kind: "prompt", Cmd: cmd, Shape: mech.ParseShape(shape),
 					First: first || rng.IntN(15) == 0, Caps: mech.Caps(63), Cols: 100,
 					Home: "/home/sim", Cwd: cwd, CwdShown: "~" + strings.TrimPrefix(cwd, "/home/sim"),
 					UnderHome: true, User: "sim", Host: "zireael", TTY: "pts/1", Styled: true,

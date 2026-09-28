@@ -168,6 +168,16 @@ func play(t *testing.T, f *fixture, s *session, sh string) {
 	s.send("\x15")
 	s.run("")
 
+	// A ghost that isn't harmless is never armed: Up behaves normally.
+	s.run("tenant _force history.ghost 'cd ~/x$(touch ghostpwned)'")
+	s.send("\x1b[A")
+	s.expect(`tenant _force history.ghost`)
+	s.send("\x15")
+	s.run("")
+	if sh == "bash" {
+		check("up restored", s.run(`bind -q previous-history`), `\\(e|M-)\[A.*\\(e|M-)OA|\\(e|M-)OA.*\\(e|M-)\[A`)
+	}
+
 	// notfound.remark: the usual message, then one more line.
 	s.run("tenant _force notfound.remark")
 	out = s.run("gti")
@@ -192,7 +202,7 @@ func play(t *testing.T, f *fixture, s *session, sh string) {
 	s.run("true")
 	s.run("ls")
 	s.run("cd ~")
-	for _, p := range []string{"pwned", "pwned2"} {
+	for _, p := range []string{"pwned", "pwned2", "ghostpwned"} {
 		if _, err := os.Stat(filepath.Join(f.home, p)); err == nil {
 			t.Fatalf("a hostile name ran a command: %s exists", p)
 		}
@@ -213,7 +223,14 @@ func play(t *testing.T, f *fixture, s *session, sh string) {
 	// evict: gone from every shell at the next prompt.
 	check("evict", s.run("tenant evict"), `tenant has been evicted`)
 	s.run("true")
-	checkNot("unloaded", s.run(`typeset -f _tenant_precmd _tenant_post; echo "hook=[$TENANT_HOOK]"`), `_tenant_(precmd|post) \(\)`)
+	// bash leaves two do-nothing stand-ins behind, in case another tool
+	// folded them into its own PROMPT_COMMAND entry; nothing else remains.
+	checkNot("unloaded", s.run(`typeset -f _tenant_precmd _tenant_classify _tenant_glyph`), `_tenant_(precmd|classify|glyph) \(\)`)
+	if sh == "bash" {
+		checkNot("unloaded", s.run(`echo "pc=[${PROMPT_COMMAND[*]}]"`), `_tenant`)
+	} else {
+		checkNot("unloaded", s.run(`echo "pc=[${precmd_functions[*]}]"`), `_tenant`)
+	}
 	check("unloaded", s.run(`echo "hook=[$TENANT_HOOK]"`), `hook=\[\]`)
 	if _, err := os.Stat(filepath.Join(f.home, ".local/state/tenant")); err == nil {
 		t.Fatal("state directory still exists after evict")
@@ -236,3 +253,86 @@ func play(t *testing.T, f *fixture, s *session, sh string) {
 }
 
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
+
+// Strict shells: set -eu, a scalar PROMPT_COMMAND that another line appends
+// to, and commands tenant can't classify. The shell must survive and print
+// nothing extra.
+func TestBashStrict(t *testing.T) {
+	need(t, "bash")
+	f := setupFixture(t)
+	rc := f.write(t, ".bashrc-strict", `PS1='[\#] \w \$ '
+HISTCONTROL=ignorespace
+PROMPT_COMMAND='history -a'
+eval "$(tenant init bash)"
+PROMPT_COMMAND="${PROMPT_COMMAND[0]}"$'\n'"true"
+set -eu
+`)
+	s := startSession(t, f.uid, f.env(), "bash", "--noprofile", "--rcfile", rc, "-i")
+	s.waitPrompt()
+	s.run("tenant start --compressed")
+	s.run("cd ~/code/rarepulls")
+	for _, c := range []string{"[ -d / ]", "FOO=1 true", "[[ -n x ]]", "ls"} {
+		s.run(c)
+	}
+	out := s.run("tenant _force prompt.glyph")
+	if !strings.Contains(Plain(out), "~/code/r") {
+		t.Fatalf("glyph under set -eu: %q", Plain(out))
+	}
+	s.run("tenant evict")
+	out = s.run("true") + s.run("true")
+	check := Plain(out)
+	for _, bad := range []string{"unbound variable", "command not found", "logout", "exit"} {
+		if strings.Contains(check, bad) {
+			t.Fatalf("strict bash printed %q:\n%s", bad, check)
+		}
+	}
+	if !strings.Contains(Plain(s.run("echo alive")), "alive") {
+		t.Fatal("the shell died")
+	}
+}
+
+// zsh with the options most likely to break a hook script.
+func TestZshOptions(t *testing.T) {
+	need(t, "zsh")
+	f := setupFixture(t)
+	os.MkdirAll(filepath.Join(f.home, ".zdot"), 0o755)
+	if f.uid >= 0 {
+		os.Lchown(filepath.Join(f.home, ".zdot"), f.uid, f.uid)
+	}
+	f.write(t, ".zdot/.zshrc", `PROMPT='[%h] %/ %# '
+u1() { : }
+u2() { : }
+precmd_functions=(u1 u2)
+bindkey -e
+setopt ksharrays nounset globsubst warncreateglobal errexit
+eval "$(tenant init zsh)"
+`)
+	s := startSession(t, f.uid, f.env("ZDOTDIR="+filepath.Join(f.home, ".zdot")), "zsh", "-i")
+	s.waitPrompt()
+	if out := Plain(s.run(`print -r -- "pf=${precmd_functions[*]}"`)); !strings.Contains(out, "pf=_tenant_status u1 u2 _tenant_precmd") {
+		t.Fatalf("precmd_functions: %s", out)
+	}
+	s.run("tenant start --compressed")
+	s.run("cd ~/code/rarepulls")
+	out := Plain(s.run("tenant _force prompt.glyph"))
+	if !strings.Contains(out, f.home+"/code/r") || strings.Contains(out, f.home+"/code/rarepulls %") {
+		t.Fatalf("glyph with %%/ under hostile options: %s", out)
+	}
+	if out := Plain(s.run("true")); !strings.Contains(out, f.home+"/code/rarepulls %") {
+		t.Fatalf("prompt not restored: %s", out)
+	}
+	s.run("tenant _force prompt.time")
+	s.run("tenant evict")
+	all := Plain(s.run("true"))
+	if out := Plain(s.run(`print -r -- "pf=${precmd_functions[*]}"`)); !strings.Contains(out, "pf=u1 u2") {
+		t.Fatalf("unload lost the user's hooks: %s", out)
+	}
+	s.mu.Lock()
+	all += Plain(s.buf.String())
+	s.mu.Unlock()
+	for _, bad := range []string{"parameter not set", "created globally", "command not found", "bad pattern"} {
+		if strings.Contains(all, bad) {
+			t.Fatalf("zsh printed %q:\n%s", bad, all)
+		}
+	}
+}

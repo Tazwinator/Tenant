@@ -34,22 +34,18 @@ func (g *Engine) Tick(st *state.State, env *mech.Env) (out mech.Effect) {
 	now := env.Now
 	if env.Kind == "prompt" {
 		st.Caps[env.Shell] = state.Caps{Bits: int(env.Caps), At: now}
-		// Last prompt's hand-offs are spent: the hook has already disarmed.
-		st.Ghost, st.TimeText = "", ""
-		if st.TitlePushed {
-			out.Say += mech.TitlePop
-			st.TitlePushed = false
+		// This shell's last hand-offs are spent: its hook has disarmed. Other
+		// shells' hand-offs are theirs and stay.
+		if h := st.Handoffs[env.Pid]; h != nil {
+			if h.Title {
+				out.Say += mech.TitlePop
+			}
+			delete(st.Handoffs, env.Pid)
 		}
 	}
 	defer func() {
-		if out.Ghost != "" {
-			st.Ghost = out.Ghost
-		}
-		if out.Time != "" {
-			st.TimeText = out.Time
-		}
-		if out.Title {
-			st.TitlePushed = true
+		if out.Ghost != "" || out.Time != "" || out.Title {
+			st.Handoffs[env.Pid] = &state.Handoff{Ghost: out.Ghost, Time: out.Time, Title: out.Title, At: now}
 		}
 	}()
 	g.observe(st, env)
@@ -255,18 +251,19 @@ func (g *Engine) force(st *state.State, env *mech.Env) (mech.Effect, bool) {
 	}
 	var texts []string
 	if st.ForceText != "" {
-		texts = append(texts, st.ForceText)
-	}
-	for _, b := range g.Story.Beats {
-		if b.Mech == st.Force {
-			texts = append(texts, b.Text...)
+		texts = []string{st.ForceText} // directed: exactly this, or nothing
+	} else {
+		for _, b := range g.Story.Beats {
+			if b.Mech == st.Force {
+				texts = append(texts, b.Text...)
+			}
 		}
+		texts = append(texts, devText[st.Force])
 	}
-	texts = append(texts, devText[st.Force])
 	eff, ok := fire(m, env, texts, g.vars(st, env))
-	if ok {
-		st.Force, st.ForceText = "", ""
-	}
+	// The trigger happened, so this was its chance: fired or refused (a
+	// ghost that isn't harmless, say), the force is used up.
+	st.Force, st.ForceText = "", ""
 	return eff, ok
 }
 

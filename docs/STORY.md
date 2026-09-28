@@ -46,7 +46,9 @@ The register is dry. Creepy comes from precision, not volume.
    That limitation is the heart of the story.
 7. **No cheap horror.** No skulls, no zalgo text, no screaming caps, no fake `rm -rf`,
    no fake errors that make someone check their disk.
-8. **Ghost commands are harmless if run**: a `cd`, or an `ls` with a comment.
+8. **Ghost commands are harmless if run**: a `cd`, or an `ls` with a comment. The
+   engine enforces this (`mech.HarmlessCommand`), so a text that fails is skipped.
+   Keep comments to plain words, without apostrophes.
 9. **Always have a way out.** A required beat's last text alternative should need no
    variables (or `{{first_seen.dir}}`, which is almost always known), so a missing
    fact can't block the story.

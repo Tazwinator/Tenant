@@ -117,6 +117,9 @@ func cmdEvict(args []string) int {
 		return 1
 	}
 	existed := e.fs.StateExists()
+	if unlock, err := e.fs.Lock(); err == nil {
+		defer unlock() // hooks already running finish first
+	}
 	if err := e.fs.Evict(); err != nil {
 		fmt.Fprintln(os.Stderr, "tenant: couldn't remove", e.paths.Tilde(e.paths.State)+":", err)
 		return 1
@@ -141,12 +144,17 @@ func cmdConfess(args []string) int {
 		fmt.Fprintln(os.Stderr, "tenant:", err)
 		return 1
 	}
+	entries, _ := e.fs.Entries()
 	st, err := state.Load(e.fs)
-	if err != nil {
+	if err != nil && len(entries) == 0 {
 		fmt.Println("tenant hasn't looked at anything. It hasn't been started.")
 		return 0
 	}
-	entries, _ := e.fs.Entries()
+	if err != nil {
+		// The log stands on its own even if the state can't be read.
+		fmt.Fprintln(os.Stderr, "tenant: couldn't read state.json ("+err.Error()+"); showing the log anyway")
+		st = state.New(0, "normal", time.Now())
+	}
 	seen, _ := e.fs.Seen()
 	now := time.Now()
 	stamp := func(t time.Time) string { return t.Local().Format("2006-01-02 15:04") }
@@ -265,7 +273,9 @@ func cmdDoctor(args []string) int {
 	default:
 		row("status", fmt.Sprintf("active since %s, %s pace", st.Started.Local().Format("Mon 2 Jan 15:04"), st.Pace))
 	}
-	if h := os.Getenv("TENANT_HOOK"); h != "" {
+	if h := os.Getenv("TENANT_HOOK"); h == "bash-exported-prompt-command" {
+		row("hook", "bash, but not attached: PROMPT_COMMAND is exported, and attaching would stop child processes inheriting it. Unexport it (export -n PROMPT_COMMAND) in ~/.bashrc before the tenant line.")
+	} else if h != "" {
 		row("hook", h+", loaded in this shell")
 	} else {
 		sh := currentShell()

@@ -116,3 +116,24 @@ func TestHostileText(t *testing.T) {
 		}
 	}
 }
+
+func TestHarmlessCommand(t *testing.T) {
+	good := []string{
+		"tenant", "ls  # i only ever read the names", "cd ~/code/rarepulls  # this is where i first saw you",
+		"ls -la  # still here", "cd ~/a_b-c.d", "pwd",
+	}
+	bad := []string{
+		"", "rm -rf ~", "cd ~/x$(touch pwned)", "cd ~/`id`", "cd '~/my dir'", "ls; rm x", "ls | sh",
+		"cd ~/x # $(id)", "ls # it's me", "ls # !!", "echo hi", "cd ~/a>b", "ls *", "cd ~/{a,b}",
+	}
+	for _, g := range good {
+		if !HarmlessCommand(g) {
+			t.Errorf("HarmlessCommand(%q) = false, want true", g)
+		}
+	}
+	for _, b := range bad {
+		if HarmlessCommand(b) {
+			t.Errorf("HarmlessCommand(%q) = true, want false", b)
+		}
+	}
+}

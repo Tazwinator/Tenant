@@ -31,6 +31,16 @@ type Fired struct {
 	Chapter int       `json:"chapter"`
 }
 
+// Handoff is what one shell has to pick up after a prompt: the ghost for its
+// next Up press, the text for a right-aligned time, and whether it pushed a
+// window title that has to be popped.
+type Handoff struct {
+	Ghost string    `json:"ghost,omitempty"`
+	Time  string    `json:"time,omitempty"`
+	Title bool      `json:"title,omitempty"`
+	At    time.Time `json:"at"`
+}
+
 // Caps is the latest capability report from one shell, for doctor.
 type Caps struct {
 	Bits int       `json:"bits"`
@@ -66,12 +76,12 @@ type State struct {
 	Dirs     map[string]*Dir `json:"dirs"`
 	FirstDir string          `json:"first_dir"`
 
-	// Hand-offs to the shell for the next call.
-	Ghost       string `json:"ghost,omitempty"`
-	TimeText    string `json:"time_text,omitempty"`
-	Force       string `json:"force,omitempty"`
-	ForceText   string `json:"force_text,omitempty"`
-	TitlePushed bool   `json:"title_pushed,omitempty"`
+	// Hand-offs to one shell for its next call, by shell process ID.
+	Handoffs map[string]*Handoff `json:"handoffs"`
+
+	// Developer only: fire this mechanic at its next trigger.
+	Force     string `json:"force,omitempty"`
+	ForceText string `json:"force_text,omitempty"`
 
 	Caps map[string]Caps `json:"caps"`
 }
@@ -81,6 +91,7 @@ func New(seed uint64, pace string, now time.Time) *State {
 	return &State{
 		Version: Version, Seed: seed, Pace: pace, Started: now,
 		Days: map[string]int{}, Cmds: map[string]int{}, Dirs: map[string]*Dir{}, Caps: map[string]Caps{},
+		Handoffs: map[string]*Handoff{},
 	}
 }
 
@@ -127,6 +138,9 @@ func (st *State) fill() {
 	if st.Caps == nil {
 		st.Caps = map[string]Caps{}
 	}
+	if st.Handoffs == nil {
+		st.Handoffs = map[string]*Handoff{}
+	}
 }
 
 // prune keeps the state small: the most recent directories, and a week of
@@ -146,6 +160,11 @@ func (st *State) prune() {
 			if e.k != st.FirstDir {
 				delete(st.Dirs, e.k)
 			}
+		}
+	}
+	for pid, h := range st.Handoffs {
+		if time.Since(h.At) > 24*time.Hour {
+			delete(st.Handoffs, pid)
 		}
 	}
 	if len(st.Days) > 8 {

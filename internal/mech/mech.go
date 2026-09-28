@@ -67,6 +67,7 @@ func ParseShape(s string) Shape {
 type Env struct {
 	Now       time.Time
 	Shell     string // bash or zsh
+	Pid       string // the shell's process ID, which keys its hand-offs
 	Kind      string // "prompt" or "notfound"
 	Status    int
 	Cmd       string // first word of the last command, or the missing command

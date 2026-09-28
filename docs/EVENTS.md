@@ -72,9 +72,19 @@ It is armed at a prompt and consumed by the next press of Up.
 - **zsh:** a zle widget sets `BUFFER` from `$(tenant _ghost)`, then rebinds the
   previous widget. The probe only accepts well-known history widgets.
 
+Each of the two Up keys (`\e[A` and `\eOA`) is probed and restored separately, and
+only borrowed if its function is known. If there turns out to be nothing to show,
+the press behaves like a plain Up.
+
 It never uses `history -s` or `print -s`, which would reach `$HISTFILE`. The
-integration tests check the history file afterwards. Ghost commands in the story must
-be harmless if someone presses Enter (a `cd`, or an `ls` with a comment).
+integration tests check the history file afterwards.
+
+**A ghost is one Enter away from running**, so the text must pass
+`mech.HarmlessCommand`: `cd`, `ls`, `pwd`, `true` or `tenant`; arguments made only of
+`[A-Za-z0-9._+/~@:,=-]`; and an optional ` # comment` in plain words. That rules out
+anything a directory name could smuggle in (`$(…)`, backticks, quotes, `;`, `|`,
+globs), and `!` history expansion. Text that fails is skipped, so the beat uses its
+next alternative.
 
 ### motd.lastlogin
 

@@ -80,9 +80,27 @@ In both shells:
   out of history (`HISTCONTROL=ignorespace`, `HIST_IGNORE_SPACE`). That includes
   the typo hook.
 - The hook returns the status it received, so `$?` is preserved.
+- Each shell passes its PID (`--pid $$`). Hand-offs (the ghost, the time, a pushed
+  window title) are kept per shell, so one terminal's prompt never consumes another
+  terminal's ghost or pops its title.
+- **Robust to your settings.** bash functions always return 0 or the status they
+  were given, so `set -e` and `set -u` are safe. zsh functions set `localoptions`, so
+  `ksharrays`, `globsubst`, `nounset`, `errexit` and friends don't reach them.
+- **Re-sourcing is safe.** Reading your rc file again keeps tenant's state and puts
+  its two entries back at the front and end of `PROMPT_COMMAND` or `precmd_functions`,
+  without duplicates. In bash, `_tenant_post` runs at most once per `_tenant_pre`.
+- **An exported `PROMPT_COMMAND`** (bash) can't become an array without child
+  processes losing it. In that case tenant doesn't attach, and `doctor` explains how
+  to un-export it.
+- On bash, the command-number marker is recorded at the end of each prompt, after
+  your own `PROMPT_COMMAND` entries, so lines that `history -n` pulls in from other
+  terminals are never mistaken for yours.
 - When the `active` sentinel disappears, the hook unloads itself at the next prompt:
-  prompt, bindings and the not-found handler go back, and its hooks and variables
-  are removed. If the binary vanishes (exit status 126 or 127), it unloads too.
+  prompt, bindings and the not-found handler go back (only if they are still
+  tenant's), and its hooks and variables are removed. In bash, `_tenant_pre` and
+  `_tenant_post` are left as do-nothing stand-ins that keep `$?`, because tools like
+  bash-preexec fold `PROMPT_COMMAND` entries into their own. If the binary vanishes
+  (exit status 126 or 127), the hook unloads too.
 
 ## Hook protocol
 
@@ -90,7 +108,7 @@ In both shells:
 |---|---|---|
 | `glyph` | `offset from to` | Checks that the letter `offset` places from the end of the displayed cwd is `from`, swaps it for `to` (both lowercase ASCII), and points the prompt's cwd token at a variable holding the result. Restored at the next prompt if the prompt is unchanged. |
 | `time` | none | Sets a variable from `$(tenant _text time)` and shows it right-aligned for one prompt. bash: `\[${_tenant_rtime}\]` prefix. zsh: `RPROMPT`. |
-| `ghost` | none | Arms the Up key. The first press fills the line from `$(tenant _ghost)`. |
+| `ghost` | none | Arms each Up key (`\e[A`, `\eOA`) whose own history function it can restore. The first press fills the line from `$(tenant _ghost --pid $$)`. |
 
 `shell.Encode` drops any verb it doesn't know or any action with the wrong number of
 arguments, so nothing unexpected can reach the hook. Text only ever reaches shell
@@ -103,7 +121,7 @@ Everything lives in `$XDG_STATE_HOME/tenant` (default `~/.local/state/tenant`):
 | File | Holds |
 |---|---|
 | `active` | Sentinel. Hooks are inert unless it exists. `evict` deletes it first. |
-| `state.json` | Seed, pace, story clock, beats fired, command-name counts, directories visited (times only), and one-prompt hand-offs (ghost, time, forced mechanic) |
+| `state.json` | Seed, pace, story clock, beats fired, command-name counts, directories visited (times only), and one-prompt hand-offs per shell PID (ghost, time, title) |
 | `seen.json` | Every name tenant has read, by directory. `confess` prints it. |
 | `audit.log` | Append-only, tab-separated log of every listing, written before it happens |
 | `lock` | `flock` target, so several shells can't interleave. It gives up after about 40 ms rather than stall a prompt. |
@@ -119,7 +137,8 @@ capped (400 and 300).
 - **Measured** in a slow CI-class VM, where `/bin/true` takes 1.4 ms: p50 3.6 ms and
   p95 4.8 ms per prompt, of which about 1.2 ms is tenant's own work. On a desktop,
   expect about half that.
-- **Deadline:** any hook call that runs past 25 ms exits silently. The prompt matters
+- **Deadline:** any hook call that runs past 25 ms exits silently, before it saves
+  anything, so a beat is never recorded without being shown. The prompt matters
   more than the story.
 - `tenant doctor` reports the engine's own time.
 
@@ -147,6 +166,6 @@ is statically linked, and that `go.mod` has no requirements.
 | Pacing | `engine.Simulate` drives the engine with synthetic usage on a fake clock. Tests assert the [tuning targets](SCHEDULER.md#tuning-targets) across 12 seeds per profile, plus dormancy, minimum gaps and daily caps. |
 | Story | Act 1 parses, uses only known mechanics and variables, has a required beat per chapter and exactly one invitation. The finale reaches its end, and the turn limit works. |
 | Mechanics | Output for each mechanic, and hostile text through every mechanic: escapes, newlines, bidi controls, `$(...)`, `%F{}` |
-| Shells | Real interactive bash and zsh on a pseudo-terminal (as `nobody` when the tests run as root). They force every mechanic, then check `$?`, restore, hostile directory names, ignorespace, confess, evict and unload, and that nothing reached the history file. |
+| Shells | Real interactive bash and zsh on a pseudo-terminal (as `nobody` when the tests run as root). They force every mechanic, then check `$?`, prompt and Up-key restore, hostile directory names, a rejected hostile ghost, ignorespace, confess, evict and unload, and that nothing reached the history file. Two more sessions run bash under `set -eu` with a folded `PROMPT_COMMAND`, and zsh with `ksharrays nounset globsubst warncreateglobal errexit`, a `%/` prompt and the user's own precmd hooks. |
 | Sandbox | A child process under Landlock tries to read a file in `$HOME`, write outside state, read `/etc`, exec and open TCP, and all of them must fail |
 | Policy | The source is parsed: no forbidden imports, `os` file functions only in `internal/audit`, `unsafe` only in `sandbox` and `term`, and the hook scripts contain no `eval` of output and no history writes |

@@ -2,6 +2,7 @@ package mech
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -118,10 +119,38 @@ func (historyGhost) Probe(e *Env) bool     { return e.Caps&CapUp != 0 }
 func (historyGhost) Triggered(e *Env) bool { return e.atPrompt() }
 func (historyGhost) Fire(e *Env, text string) (Effect, bool) {
 	g := term.Clean(text, 120)
-	if g == "" {
+	if !HarmlessCommand(g) {
 		return Effect{}, false
 	}
 	return Effect{Ghost: g, Acts: []Action{{Verb: "ghost"}}}, true
+}
+
+// A ghost sits in your line editor, one Enter away from running, so it has
+// to be harmless: a command from a short list, arguments made only of plain
+// characters (a directory name with $(...) in it doesn't qualify), and an
+// optional comment in plain words.
+var (
+	ghostCommands = map[string]bool{"cd": true, "ls": true, "pwd": true, "true": true, "tenant": true}
+	ghostArg      = regexp.MustCompile(`^[A-Za-z0-9._+/~@:,=-]{1,80}$`)
+	ghostComment  = regexp.MustCompile(`^[A-Za-z0-9 .,:/~_-]*$`)
+)
+
+// HarmlessCommand reports whether a line is safe to leave in the editor.
+func HarmlessCommand(line string) bool {
+	cmd, comment, hasComment := strings.Cut(line, " #")
+	if hasComment && !ghostComment.MatchString(comment) {
+		return false
+	}
+	words := strings.Fields(cmd)
+	if len(words) == 0 || !ghostCommands[words[0]] {
+		return false
+	}
+	for _, w := range words[1:] {
+		if !ghostArg.MatchString(w) {
+			return false
+		}
+	}
+	return true
 }
 
 // motd.lastlogin: a new shell opens with a "Last login" line whose "from"
