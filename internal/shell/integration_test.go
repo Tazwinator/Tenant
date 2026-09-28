@@ -102,6 +102,7 @@ func TestZsh(t *testing.T) {
 	if f.uid >= 0 {
 		os.Lchown(filepath.Join(f.home, ".zdot"), f.uid, f.uid)
 	}
+	zshenv(t, f)
 	f.write(t, ".zdot/.zshrc", `PROMPT='[%h] %~ %# '
 HISTFILE=$HOME/.zsh_history
 HISTSIZE=100
@@ -181,8 +182,10 @@ func play(t *testing.T, f *fixture, s *session, sh string) {
 	// notfound.remark: the usual message, then one more line.
 	s.run("tenant _force notfound.remark")
 	out = s.run("gti")
-	check("notfound", out, `command not found`)
-	check("remark", out, `not found\S*[\s\S]*\n[^\n]*(meant|isn't here|neither am i|still here)`)
+	// The shell's own handler runs first, unchanged: plain, pkgfile, or
+	// Ubuntu's command-not-found ("Command 'gti' not found, did you mean").
+	check("notfound", out, `(?i)command.{0,8}not found|not found.{0,4}gti`)
+	check("remark", out, `not found[\s\S]*\n[^\n]*(meant|isn't here|neither am i|still here)`)
 
 	// clear.residue.
 	s.run("tenant _force clear.residue")
@@ -252,6 +255,12 @@ func play(t *testing.T, f *fixture, s *session, sh string) {
 	}
 }
 
+// zshenv keeps the distribution's global rc files (compinit prompts on
+// Ubuntu, for example) out of the test sessions.
+func zshenv(t *testing.T, f *fixture) {
+	f.write(t, ".zdot/.zshenv", "unsetopt global_rcs\n")
+}
+
 func shQuote(s string) string { return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'" }
 
 // Strict shells: set -eu, a scalar PROMPT_COMMAND that another line appends
@@ -299,6 +308,7 @@ func TestZshOptions(t *testing.T) {
 	if f.uid >= 0 {
 		os.Lchown(filepath.Join(f.home, ".zdot"), f.uid, f.uid)
 	}
+	zshenv(t, f)
 	f.write(t, ".zdot/.zshrc", `PROMPT='[%h] %/ %# '
 u1() { : }
 u2() { : }
