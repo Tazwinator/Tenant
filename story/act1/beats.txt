@@ -1,0 +1,171 @@
+# Act 1: The Previous Tenant. SPOILERS.
+#
+# Format (internal/script):
+#   beat      id
+#   chapter   1-5
+#   required  yes          required beats fire in file order within a chapter
+#   invite    yes          firing this lets `tenant` open the finale
+#   after     other-id     an optional beat that waits for another beat
+#   mech      mechanic     see docs/EVENTS.md
+#   text      ...          alternatives, tried in order until one renders
+#   fallback  mechanic     used if the mechanic can't work in this shell,
+#   ftext     ...          or if the chapter stalls
+#
+# Variables: {{user}} {{host}} {{cwd}} {{cwd.off}} {{names.here}}
+# {{names.elsewhere}} {{last_night.dir}} {{last_night.time}}
+# {{first_seen.dir}} {{cmd.top}} {{cmd.rare}} {{days}} {{typo}}
+# {{typo.meant}} {{cmds.total}} {{dirs.count}}
+#
+# Rules: lowercase, short, specific, never a threat, never a power it
+# doesn't have. Ghost commands must be harmless if someone presses Enter.
+
+
+# ── chapter 1: off ─────────────────────────────────────────────────────
+# Deniable. Every one of these has a boring explanation available.
+
+beat      off-glyph
+chapter   1
+required  yes
+mech      prompt.glyph
+fallback  title.whisper
+ftext     {{user}}@{{host}}:{{cwd.off}}
+
+beat      off-phantom
+chapter   1
+required  yes
+mech      ls.phantom
+text      {{names.elsewhere}}
+text      untitled.txt
+fallback  motd.lastlogin
+ftext     {{first_seen.dir}}
+
+beat      off-title
+chapter   1
+mech      title.whisper
+text      {{user}}@{{host}}:{{first_seen.dir}}
+
+
+# ── chapter 2: it knows ────────────────────────────────────────────────
+# "That's... where I was."
+
+beat      knows-login
+chapter   2
+required  yes
+mech      motd.lastlogin
+text      {{last_night.dir}}
+text      {{first_seen.dir}}
+fallback  title.whisper
+ftext     last login {{last_night.time}} from {{last_night.dir}}
+ftext     last login from {{first_seen.dir}}
+
+beat      knows-residue
+chapter   2
+required  yes
+mech      clear.residue
+text      cd {{last_night.dir}}
+text      cd {{first_seen.dir}}
+fallback  prompt.time
+ftext     {{last_night.time}}
+ftext     23:41
+
+beat      knows-phantom
+chapter   2
+mech      ls.phantom
+text      still_here.txt
+
+beat      knows-glyph
+chapter   2
+mech      prompt.glyph
+
+
+# ── chapter 3: it speaks ───────────────────────────────────────────────
+# Something is talking. Still quiet, still polite.
+
+beat      speaks-ghost
+chapter   3
+required  yes
+mech      history.ghost
+text      cd {{first_seen.dir}}  # this is where i first saw you
+text      ls  # i only ever read the names
+fallback  clear.residue
+ftext     {{first_seen.dir}}. that's where i first saw you.
+
+beat      speaks-title
+chapter   3
+required  yes
+mech      title.whisper
+text      you use {{cmd.top}} more than anything. i counted.
+text      i've been counting what you type.
+fallback  clear.residue
+ftext     you use {{cmd.top}} more than anything. i counted.
+ftext     i've been counting what you type.
+
+beat      speaks-typo
+chapter   3
+mech      notfound.remark
+text      you meant {{typo.meant}}. you always mean {{typo.meant}}.
+text      {{typo}} isn't here. i looked.
+
+beat      speaks-rare
+chapter   3
+mech      clear.residue
+text      you haven't typed {{cmd.rare}} in a while. i liked that one.
+
+
+# ── chapter 4: it wants ────────────────────────────────────────────────
+# It wants something. It tells you what it can't do.
+
+beat      wants-phantom
+chapter   4
+required  yes
+mech      ls.phantom
+text      i_can_only_read_the_names
+fallback  motd.lastlogin
+ftext     somewhere i can only read the names of
+
+beat      wants-time
+chapter   4
+required  yes
+mech      prompt.time
+text      {{last_night.time}}
+text      23:41
+fallback  title.whisper
+ftext     {{last_night.time}}
+ftext     23:41
+
+beat      wants-login
+chapter   4
+mech      motd.lastlogin
+text      the next room over
+
+beat      wants-typo
+chapter   4
+mech      notfound.remark
+text      {{typo}}: not found. neither am i.
+
+
+# ── chapter 5: the name ────────────────────────────────────────────────
+# The invitation. After this, typing `tenant` opens the finale.
+
+beat      name-residue
+chapter   5
+required  yes
+mech      clear.residue
+text      you know what i'm called.
+fallback  title.whisper
+ftext     you know what i'm called.
+
+beat      name-ghost
+chapter   5
+required  yes
+invite    yes
+mech      history.ghost
+text      tenant
+fallback  title.whisper
+ftext     type my name
+
+beat      name-wait
+chapter   5
+after     name-ghost
+mech      prompt.time
+text      waiting

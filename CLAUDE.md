@@ -18,9 +18,22 @@ Work from `master`.
 - `confess` output is never altered by the story. `evict` is always out of character.
 - Hooks are inert without the `active` sentinel, as root, and with `TENANT_OFF=1`.
 
+## Build and test
+
+```sh
+CGO_ENABLED=0 go build -o tenant ./cmd/tenant
+go test ./...                               # bash and zsh integration tests; -short skips them
+shellcheck -s bash internal/shell/bash.sh && zsh -n internal/shell/zsh.zsh
+TENANT_DEV=1 ./tenant _sim --profile=daily  # pacing on a fake clock (spoilers)
+```
+
+Changing pacing means re-running `TestPacingTargets` and updating the table in
+docs/SCHEDULER.md. Changing a hook script means both shells, plus
+internal/shell/integration_test.go.
+
 ## Conventions
 
-- Go 1.24+, `CGO_ENABLED=0`, standard library first. Ask before adding a dependency.
+- Go 1.24+, `CGO_ENABLED=0`, standard library only (D18). Ask before adding a dependency.
 - Docs are in British English. Keep them short, and update the relevant doc in the
   same change as the code.
 - Spoilers (story text) go in `story/` only. Docs describe structure, not script.

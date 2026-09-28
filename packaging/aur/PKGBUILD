@@ -1,0 +1,37 @@
+# Maintainer: Tazwinator
+#
+# Builds from source, so what you run is what you can read. Before
+# publishing a release: set pkgver, fill in sha256sums with
+# `updpkgsums`, and regenerate .SRCINFO with `makepkg --printsrcinfo`.
+
+pkgname=tenant
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='A slow-burn horror story that lives in your shell. It can only read names.'
+arch=('x86_64' 'aarch64')
+url='https://github.com/Tazwinator/Tenant'
+license=('MIT')
+makedepends=('go')
+optdepends=('zsh: for the zsh hook')
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  cd "Tenant-$pkgver"
+  export CGO_ENABLED=0
+  export GOFLAGS='-trimpath -mod=readonly -modcacherw'
+  go build -ldflags "-s -w -X main.version=$pkgver" -o tenant ./cmd/tenant
+}
+
+check() {
+  cd "Tenant-$pkgver"
+  CGO_ENABLED=0 go test -short ./...
+}
+
+package() {
+  cd "Tenant-$pkgver"
+  install -Dm755 tenant "$pkgdir/usr/bin/tenant"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+  install -Dm644 docs/SECURITY.md "$pkgdir/usr/share/doc/$pkgname/SECURITY.md"
+}

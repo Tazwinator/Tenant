@@ -1,0 +1,8 @@
+# Printed after the audit log by `tenant confess`, once the finale is done.
+# SPOILERS. Lines whose {{variables}} aren't known are skipped.
+that's all of it.
+{{seen.count}} names, {{cmds.total}} commands, and not one word of what was inside any of them.
+"wrote nothing." you'll have read that as a promise. it was only ever true.
+i couldn't leave a mark here if i tried. i tried.
+you can evict me now. i won't be anywhere to mind.
+— the previous tenant

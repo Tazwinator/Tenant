@@ -1,0 +1,91 @@
+# The finale. SPOILERS.
+#
+# Opened by typing `tenant` once the invitation has fired. Each @node says
+# its lines, then either jumps (-> node) or waits for input and routes on
+# keywords (? words => node). Routes are tried top to bottom; * matches
+# anything. Lines whose {{variables}} aren't known are skipped.
+
+limit 7 => late
+
+@start
+oh.
+you typed it.
+nobody types it. they type ls, and cd, and the names of things they want.
+you type {{cmd.top}}. you type {{cmd.top}} a lot.
+-> ask
+
+@ask
+? leave go out evict away get        => leave
+? why want                           => why
+? who what name                      => who
+? read see names files look watch    => names
+? stay                               => stay
+? sorry                              => sorry
+? hi hello hey                       => hello
+? help scared afraid scary           => afraid
+? fuck shit                          => fair
+? *                                  => shrug
+
+@who
+i lived here before you.
+not in the house. in here. this directory had someone else's name on it once.
+they reuse the numbers, you know. you got my number, so you got my rooms.
+-> ask
+
+@why
+i don't want anything done. i can't do anything.
+i can't open a file. i never could. i can read the names on the doors, and that's all.
+{{first_seen.dir}}. that's where i first saw you. i liked the name.
+-> ask
+
+@names
+there's something called {{names.elsewhere}} in there.
+i don't know what it says. i'll never know what it says.
+that's the rule. names, not insides.
+-> ask
+
+@hello
+hello.
+it's been a long time since anyone said that in here.
+-> ask
+
+@sorry
+you don't need to be sorry. you only moved in.
+-> ask
+
+@afraid
+you don't need to be.
+look at what i did. a letter in your prompt. a file that wasn't there. a line that stayed after clear.
+that's the whole of what i can do. i've been doing all of it, as hard as i can.
+-> ask
+
+@fair
+that's fair.
+-> ask
+
+@shrug
+i don't know that one.
+i only know the words you use, and you've never used that one here.
+-> ask
+
+@stay
+you'd let me?
+that's kind. but you should see what i took first. then decide.
+-> confess
+
+@leave
+yes.
+you've had the word for it all along. evict. i always liked that it was a word you'd have to type yourself.
+before you do, i want you to see what i took.
+-> confess
+
+@late
+we could keep talking. i'd like that.
+but it's late, and you've been kind enough.
+-> confess
+
+@confess
+there's a list. i kept it the whole time. i wasn't allowed to lie on it, and i didn't.
+type tenant confess.
+it's everything i ever looked at.
+-> END

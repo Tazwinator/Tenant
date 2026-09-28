@@ -1,0 +1,42 @@
+name: ci
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      CGO_ENABLED: "0"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Install shells and shellcheck
+        run: sudo apt-get update -q && sudo apt-get install -y -q zsh shellcheck
+      - name: gofmt
+        run: test -z "$(gofmt -l .)" || { gofmt -l .; exit 1; }
+      - name: vet
+        run: go vet ./...
+      - name: shellcheck
+        run: shellcheck -s bash internal/shell/bash.sh
+      - name: zsh syntax
+        run: zsh -n internal/shell/zsh.zsh
+      - name: test
+        run: go test -count=1 ./...
+      - name: build (static, reproducible)
+        run: go build -trimpath -ldflags "-s -w" -o tenant ./cmd/tenant
+      - name: binary is static
+        run: file tenant | grep -q "statically linked"
+      - name: no network, no exec, no cgo in the binary
+        run: |
+          bad=$(go list -deps ./cmd/tenant | grep -Ex 'net|net/.*|os/exec|os/user|plugin|runtime/cgo' || true)
+          if [ -n "$bad" ]; then echo "forbidden dependencies: $bad"; exit 1; fi
+      - name: no third-party modules
+        run: test "$(go list -m all | wc -l)" -eq 1

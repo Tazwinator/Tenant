@@ -1,160 +1,152 @@
 # Architecture
 
-One static, CGO-free Go binary (`tenant`) and one short hook script per shell,
-which the binary prints (`tenant init bash`, `tenant init zsh`). The hook does as
-little as possible: on each prompt it hands the binary a few facts, then carries out
-a small, fixed set of actions the binary asks for. All decisions (whether anything
-happens, what, and when) are made in the binary, inside a Landlock sandbox.
+One static, CGO-free Go binary (`tenant`) with no third-party dependencies, and one
+short hook script per shell, which the binary prints (`tenant init bash`, `tenant
+init zsh`). The hook does as little as possible: on each prompt it hands the binary
+a few facts, then carries out a small, fixed set of actions the binary asks for.
+All decisions (whether anything happens, what, and when) are made in the binary,
+inside a Landlock sandbox.
 
 ## Engine and surfaces
 
-The binary is split into two layers:
-
-- **The engine:** scheduler, story, observations, audit log and sandbox. It knows
-  nothing about shells.
-- **Surfaces:** the places the entity can appear. A surface turns an engine
-  decision into something the player sees. Today the only surfaces are the bash
-  and zsh hooks.
-
-This split is what lets a future surface (fish, PowerShell, or a desktop surface)
-be added to the **same binary**, rather than becoming a second app. See
-[PLATFORMS](PLATFORMS.md).
+- **The engine** is the scheduler, story, observations, audit log and sandbox. It
+  knows nothing about shells.
+- **Surfaces** are the places the entity can appear. Today the only surfaces are the
+  bash and zsh hooks. A future surface (fish, PowerShell, a desktop) goes into
+  **the same binary**. See [PLATFORMS](PLATFORMS.md).
 
 ```
  bash: PROMPT_COMMAND, bind -x, command_not_found_handle
  zsh:  precmd, preexec, zle widget, command_not_found_handler
   │
   ▼
- hook script  (shell builtins only)
-  │  fast path: no ~/.local/state/tenant/active → return, no exec
+ hook script (shell builtins only)
+  │  fast path: no ~/.local/state/tenant/active → nothing, no exec
   │
   ▼
- tenant _hook prompt --shell bash --status N --cmd ARGV0 --shape SHAPE  (one exec per prompt)
-  │  sandboxed: Landlock FS + net rules
-  ├── state      lock, load, save        (~/.local/state/tenant)
-  ├── observe    record cwd + argv0      (names only)
-  ├── scheduler  seeded: fire a beat on this tick?
-  ├── story      which beat, which text
-  └── mechanics  carry out the beat, through the shell's surface adapter
-        ├── text for the player  → written straight to stderr (the terminal)
-        └── shell actions        → stdout: "verb int int" lines, fixed vocabulary
+ tenant _hook prompt --shell bash --status N --cmd ARGV0 --shape SHAPE --first 0|1 --caps BITS
+  │  Landlock: read names under $HOME, use its own directory, nothing else
+  ├── state     lock, load, save          (~/.local/state/tenant)
+  ├── engine    observe cwd + argv0, move the story clock on, pick a beat
+  ├── sched     seeded pacing: should anything fire on this prompt?
+  ├── script    which beat, which text (story/act1)
+  └── mech      carry the beat out
+        ├── text for the player  → stderr, straight to the terminal
+        └── actions for the hook → stdout: "glyph 3 111 117", "time", "ghost"
   │
   ▼
- hook script reads the action lines, dispatches with `case` (never `eval`)
+ hook reads the action lines and dispatches with `case` (never `eval`)
 ```
 
-## Components
-
-Planned repo layout:
+## Repo layout
 
 ```
-cmd/tenant/           CLI entry point and command dispatch
-internal/shell/       hook protocol (verbs and args), shared by all shells
-internal/shell/bash/  the embedded bash hook script and its probes
-internal/shell/zsh/   the embedded zsh hook script and its probes
-internal/sched/       seeded scheduler, sittings, chapter unlocks, haunting budget
-internal/story/       story loader, beats, text templates
-internal/mech/        one file per mechanic (ls.phantom, prompt.glyph, ...)
-internal/observe/     what tenant learns: cwd, argv0, directory names
-internal/audit/       the only package allowed to touch the filesystem; confess
-internal/state/       state dir, flock, atomic writes, schema version
-internal/sandbox/     Landlock setup and status reporting
-internal/term/        output sanitising, colours (LS_COLORS), OSC title
-story/                the Act 1 script (spoilers)
-teaser/               tape file for the teaser clip
-packaging/aur/        PKGBUILD
-docs/
+cmd/tenant/          CLI: init, start, evict, confess, doctor, the finale, _hook, dev tools
+internal/audit/      the only package that touches the filesystem; the audit log; seen names
+internal/state/      state.json: story clock, observations, hand-offs
+internal/sandbox/    Landlock through raw syscalls
+internal/sched/      pace presets, sittings, chapter unlocks, guards, hazard, seeded rolls
+internal/engine/     one tick: observe, advance, choose, fire; template variables; simulator
+internal/mech/       the eight mechanics
+internal/script/     parsers for beats, the finale dialogue and the epilogue
+internal/shell/      the hook scripts (bash.sh, zsh.zsh) and the protocol encoder
+internal/finale/     the typed conversation
+internal/term/       sanitising, LS_COLORS, window titles, raw mode for the typewriter
+internal/policy/     tests that hold the source to the security invariants
+story/act1/          the script: beats.txt, finale.txt, epilogue.txt (spoilers)
+teaser/              the VHS tape for the teaser clip
+packaging/aur/       PKGBUILD
 ```
 
 ## Shell hooks
 
-Each hook does the same four jobs, using that shell's own mechanisms:
+Each hook does the same jobs with its own shell's mechanisms:
 
 | Job | bash (5.1+) | zsh |
 |---|---|---|
-| Capture the last command's status | `_tenant_status`, **prepended** to the `PROMPT_COMMAND` array, so it sees `$?` before anything else runs | the first line of the precmd function |
-| Learn the last command's first word | in the shell, from the single in-memory entry `history 1` (never `$HISTFILE`). An unchanged `HISTCMD` means no new command. | `preexec` argument `$1` |
-| Run each prompt | `_tenant_prompt`, **appended** to `PROMPT_COMMAND`, so it runs after prompt frameworks have built `PS1` | appended last to `precmd_functions` |
-| Up-arrow ghost | `bind -x` on Up, only while armed; it restores the previous binding after one press | zle widget wrapping the existing Up widget |
+| Keep `$?` and undo last prompt's change | `_tenant_pre`, **prepended** to the `PROMPT_COMMAND` array | `_tenant_status`, first in `precmd_functions` |
+| Learn the last command's first word | `_tenant_pre`, from the in-memory `history 1` (never `$HISTFILE`), only when `HISTCMD` moved | `_tenant_preexec`, from its first argument |
+| Run each prompt | `_tenant_post`, **appended**, so it runs after prompt frameworks build `PS1` | `_tenant_precmd`, last in `precmd_functions` |
+| Up-arrow ghost | `bind -x` on Up while armed, then restores the previous readline function | a zle widget bound while armed, then restores the previous widget |
 | Typo remark | wraps `command_not_found_handle` | wraps `command_not_found_handler` |
 
 In both shells:
 
-- Only the first word (`argv0`) and a shape token (for example `ls:plain`,
-  `ls:long`, `other`) leave the shell. The full command line never reaches the
-  binary.
-- A command that starts with a space is ignored if the shell is set to keep those
-  out of history. On bash this happens naturally, because the command never
-  reaches `history 1`. On zsh it applies when `HIST_IGNORE_SPACE` is set.
-- The prompt hook always ends by returning the status it received, so `$?` is
-  preserved.
+- Only the first word and a **shape** token leave the shell. Shapes are `ls:p`,
+  `ls:l`, plus `c` (colour) and `a` (all), or `ls:x` (paths, pipes, icons, `-R`),
+  and `clear`, `cd` or `-`. One level of alias is expanded in the shell to work the
+  shape out.
+- A command started with a space is invisible when the shell keeps such commands
+  out of history (`HISTCONTROL=ignorespace`, `HIST_IGNORE_SPACE`). That includes
+  the typo hook.
+- The hook returns the status it received, so `$?` is preserved.
+- When the `active` sentinel disappears, the hook unloads itself at the next prompt:
+  prompt, bindings and the not-found handler go back, and its hooks and variables
+  are removed. If the binary vanishes (exit status 126 or 127), it unloads too.
 
 ## Hook protocol
 
-The binary talks to the shell in two channels:
-
-- **stderr** carries text for the player. The binary writes it straight to the
-  terminal (it is not captured by `$(...)`). Every user-derived string is sanitised
-  first (see [SECURITY](SECURITY.md#terminal-output)).
-- **stdout** carries action lines. Each line is a verb from a fixed list, followed
-  by integers only:
-
-| Verb | Args | Shell does |
+| Verb | Args | The hook |
 |---|---|---|
-| `prompt-glyph` | `index codepoint` | Saves the prompt, swaps one character of the cwd shown in it, escapes it, and restores it on the next prompt |
-| `prompt-time` | `slot` | Shows a right-aligned story time for one render. zsh uses `RPROMPT`. bash uses a zero-width right-aligned prefix on `PS1`. The text is fetched with `$(tenant _text time SLOT)` and escaped. |
-| `ghost-arm` | none | Arms the Up-arrow ghost. On the next press, the line is filled from `$(tenant _ghost)`. |
-| `unload` | none | Restores everything it saved, unbinds its keys and removes its hooks |
+| `glyph` | `offset from to` | Checks that the letter `offset` places from the end of the displayed cwd is `from`, swaps it for `to` (both lowercase ASCII), and points the prompt's cwd token at a variable holding the result. Restored at the next prompt if the prompt is unchanged. |
+| `time` | none | Sets a variable from `$(tenant _text time)` and shows it right-aligned for one prompt. bash: `\[${_tenant_rtime}\]` prefix. zsh: `RPROMPT`. |
+| `ghost` | none | Arms the Up key. The first press fills the line from `$(tenant _ghost)`. |
 
-Text that the shell has to hold (the ghost command, the time text) goes into a
-variable by command-substitution assignment. Assignment does not evaluate its
-value, so there is never an `eval` of anything the binary prints at runtime.
+`shell.Encode` drops any verb it doesn't know or any action with the wrong number of
+arguments, so nothing unexpected can reach the hook. Text only ever reaches shell
+variables by command-substitution assignment, which isn't evaluated.
 
 ## State
 
-Everything lives under `$XDG_STATE_HOME/tenant` (default `~/.local/state/tenant`):
+Everything lives in `$XDG_STATE_HOME/tenant` (default `~/.local/state/tenant`):
 
 | File | Holds |
 |---|---|
 | `active` | Sentinel. Hooks are inert unless it exists. `evict` deletes it first. |
-| `state.json` | Schema version, seed, mode (normal/compressed/tester), start time, sittings, chapter, beats fired, budget counters |
-| `observations.jsonl` | Timestamp, shell, cwd, argv0, exit status. Pruned after the story ends. |
-| `seen.jsonl` | Directory names listed, per directory. This is what `confess` prints. |
-| `audit.log` | Append-only, human-readable log of every read and write |
-| `lock` | `flock` target. Several shells (tmux panes, bash and zsh side by side) run hooks at once. |
+| `state.json` | Seed, pace, story clock, beats fired, command-name counts, directories visited (times only), and one-prompt hand-offs (ghost, time, forced mechanic) |
+| `seen.json` | Every name tenant has read, by directory. `confess` prints it. |
+| `audit.log` | Append-only, tab-separated log of every listing, written before it happens |
+| `lock` | `flock` target, so several shells can't interleave. It gives up after about 40 ms rather than stall a prompt. |
 
-Writes are atomic (temp file plus `rename`). An event is claimed under the lock, so
-only one pane fires it, and it fires in the pane you just used.
+Writes are atomic (temp file then `rename`). Directories and command counts are
+capped (400 and 300).
 
-## Performance budget
+## Performance
 
-- **Inactive:** no exec. The prompt fast path is a single `[[ -e ... ]]`.
-- **Active:** one exec of the binary per prompt. bash also forks once for `history
-  1` (bash 5.3's `${ ...; }` substitution avoids the fork where available). The
-  target is p95 of 5 ms or less on Zireael. The binary also has an internal deadline
-  of 25 ms: if it overruns, it does nothing and exits.
-- `tenant doctor` runs the hook 100 times and reports p50 and p95.
+- **Inactive:** no exec. The fast path is `[[ -e .../active ]]`.
+- **Active:** one exec per prompt (two when a `time` action runs). bash also forks
+  once for `history 1` after a command.
+- **Measured** in a slow CI-class VM, where `/bin/true` takes 1.4 ms: p50 3.6 ms and
+  p95 4.8 ms per prompt, of which about 1.2 ms is tenant's own work. On a desktop,
+  expect about half that.
+- **Deadline:** any hook call that runs past 25 ms exits silently. The prompt matters
+  more than the story.
+- `tenant doctor` reports the engine's own time.
 
 ## Failure policy
 
-The shell must never break. Every error means "do nothing, silently" in the hook,
-and a line in `audit.log` for the binary. A missing or broken binary makes the hook
-unload itself, not print errors.
+The shell must never break. The hook swallows every error. The binary does nothing
+if it can't lock, load, parse or save. A missing binary makes the hook unload itself.
 
 ## Build and dependencies
 
-- `CGO_ENABLED=0 go build -trimpath ./cmd/tenant`, Go 1.24+.
-- Runtime dependencies: the standard library, `github.com/landlock-lsm/go-landlock`
-  and `golang.org/x/sys`. That's all.
-- CI enforces that the binary imports no `net`, `net/http` or `os/exec`, and that
-  only `internal/audit` calls the `os` file functions.
+```sh
+CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o tenant ./cmd/tenant
+go test ./...          # needs bash and zsh for the integration tests; -short skips them
+TENANT_DEV=1 ./tenant _sim --profile=daily   # the whole story on a fake clock (spoilers)
+```
+
+The binary depends only on the Go standard library. CI checks that `go list -deps`
+contains no `net`, `os/exec`, `os/user`, `plugin` or `runtime/cgo`, that the binary
+is statically linked, and that `go.mod` has no requirements.
 
 ## Testing
 
 | Layer | How |
 |---|---|
-| Scheduler | Pure functions over a fake clock. Simulation profiles (daily, evenings-only, weekend, tmux with six panes) assert the pacing targets in [SCHEDULER](SCHEDULER.md#tuning-targets). |
-| Mechanics | Golden output tests per mechanic, per shell |
-| Shell integration | Real interactive bash and zsh under a pty in CI (the pty library is a test-only dependency). It checks hook install, unload, `$?` preservation, prompt restore, and coexistence with bash-preexec, starship and oh-my-zsh. |
-| Adversarial | Directory and file names such as `$(touch pwned)`, backticks, `\w`, `%F{red}`, ANSI escapes, newlines and very long names, run through every mechanic in both shells |
-| Sandbox | Under Landlock, attempts to read a file, write outside state, connect and exec all fail |
+| Pacing | `engine.Simulate` drives the engine with synthetic usage on a fake clock. Tests assert the [tuning targets](SCHEDULER.md#tuning-targets) across 12 seeds per profile, plus dormancy, minimum gaps and daily caps. |
+| Story | Act 1 parses, uses only known mechanics and variables, has a required beat per chapter and exactly one invitation. The finale reaches its end, and the turn limit works. |
+| Mechanics | Output for each mechanic, and hostile text through every mechanic: escapes, newlines, bidi controls, `$(...)`, `%F{}` |
+| Shells | Real interactive bash and zsh on a pseudo-terminal (as `nobody` when the tests run as root). They force every mechanic, then check `$?`, restore, hostile directory names, ignorespace, confess, evict and unload, and that nothing reached the history file. |
+| Sandbox | A child process under Landlock tries to read a file in `$HOME`, write outside state, read `/etc`, exec and open TCP, and all of them must fail |
+| Policy | The source is parsed: no forbidden imports, `os` file functions only in `internal/audit`, `unsafe` only in `sandbox` and `term`, and the hook scripts contain no `eval` of output and no history writes |

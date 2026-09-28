@@ -78,12 +78,46 @@ same binary.
 The maintainer's friends mostly don't use terminals, so the kill test recruits from
 the teaser's "want to test" issue and Linux communities instead.
 
+**D18. No dependencies at all; Landlock through raw syscalls (supersedes part of D1).**
+`go-landlock` and `x/sys` turned out to be unnecessary. The sandbox is about 100
+lines of `syscall` calls, the binary depends only on the standard library, and CI
+checks that `go.mod` stays empty.
+
+**D19. `prompt.glyph` shifts a vowel instead of using a homoglyph.**
+Cyrillic look-alikes are invisible in most monospace fonts, which wastes the beat.
+`rarepulls` → `rarepolls` is visible, deniable and pure ASCII, so the hook only ever
+handles lowercase letters.
+
+**D20. Optional beats wait for the chapter's required beats; stalled required beats
+fire at their next chance.**
+Simulation showed optional beats spending the budget and delaying the story. Now the
+story comes first, and colour fills the wait between chapters.
+
+**D21. The prototype phase was skipped (the maintainer's call).**
+The full MVP was built straight away and verified by simulation and pty tests instead.
+Living with it on Zireael moves to the pre-teaser week.
+
+**D22. Prompts are changed through variable references, not text.**
+In bash (and zsh with `PROMPT_SUBST`), the cwd token becomes `${_tenant_pwd}`, which
+the shell expands without re-evaluating it. Hostile directory names can't reach
+prompt expansion, so no escaping rules have to be got right.
+
+**D23. The finale is only saved as finished when it reaches the end.**
+Ctrl-C always exits at once with the terminal restored, and `tenant` starts the
+conversation again.
+
+**D24. Developer commands are gated behind `TENANT_DEV=1`, and forced beats never
+count as story progress.**
+`_force <mechanic> [text]` and `_invite` exist so the teaser can be recorded from the
+real binary.
+
 ## Open questions
 
 **Q2. What does Zireael's bash setup look like?**
-Is it a plain `PS1`, starship, oh-my-bash or bash-it? Does it use ble.sh, atuin,
-fzf's Ctrl-R or history bindings, or bash-preexec? Is `ls` aliased to `eza`? This
-decides which adapters the weekend prototype needs first.
+v0.1 supports a `PS1` with `\w` or `\W`, readline's history functions on Up, GNU
+`ls` or `eza` without icons, and any not-found handler. With starship, ble.sh or an
+atuin Up key, the affected beats fall back to other mechanics. `tenant doctor`
+reports what your shell can show. If Zireael needs an adapter, it goes here.
 
 **Q6 (minor). Module path casing.**
 The repo is `Tazwinator/Tenant`. Go module paths are case-sensitive, and a
