@@ -1,15 +1,19 @@
 # tenant: notes for contributors and agents
 
-A slow-burn horror story that runs inside a real zsh. It's one CGO-free Go binary
-plus a zsh hook. Start with the [README](README.md), then [docs/](docs/).
+A slow-burn horror story that runs inside a real shell (bash first, then zsh). It's
+one CGO-free Go binary plus a hook script per shell. Start with the
+[README](README.md), then [docs/](docs/).
+
+Work from `master`.
 
 ## Never break these (from docs/SECURITY.md)
 
-- Never read file contents. Only directory names under `$HOME`, plus tenant's own state.
-- Never write outside `$XDG_STATE_HOME/tenant`. No `.zshrc` or `$HISTFILE` edits,
-  and no `print -s`.
+- Never read file contents: only directory names under `$HOME`, plus tenant's own
+  state. Never read `$HISTFILE`.
+- Never write outside `$XDG_STATE_HOME/tenant`. No rc-file or `$HISTFILE` edits, no
+  `print -s`, and no `history -s`.
 - No `net` and no `os/exec` imports. Only `internal/audit` touches the filesystem.
-- The zsh hook never `eval`s binary output: fixed verbs plus integers only.
+- Hooks never `eval` binary output: fixed verbs plus integers only.
 - Never wrap, alias or replace user commands.
 - `confess` output is never altered by the story. `evict` is always out of character.
 - Hooks are inert without the `active` sentinel, as root, and with `TENANT_OFF=1`.
@@ -21,3 +25,4 @@ plus a zsh hook. Start with the [README](README.md), then [docs/](docs/).
   same change as the code.
 - Spoilers (story text) go in `story/` only. Docs describe structure, not script.
 - Record decisions in `docs/DECISIONS.md` (append; don't rewrite history).
+- No GUI or new platforms before launch (D16). New surfaces go into the same binary.

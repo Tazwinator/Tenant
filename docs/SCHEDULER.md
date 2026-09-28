@@ -42,7 +42,7 @@ end, and a heavy user can't burn through it in one afternoon.
 
 ## Within a sitting
 
-Each `precmd` is an opportunity. An opportunity can fire only if every guard passes:
+Each prompt, in any shell, is an opportunity. An opportunity can fire only if every guard passes:
 
 | Guard | Value (tunable) |
 |---|---|

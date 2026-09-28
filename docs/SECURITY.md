@@ -14,11 +14,11 @@ honest log of everything it has looked at, and hands it over whenever you ask.
 | # | Invariant | Enforced by |
 |---|---|---|
 | I1 | Never opens a file of yours for reading. It only lists directory names under `$HOME`. | Landlock (`READ_DIR` on `$HOME`, `READ_FILE` only on its own dirs). CI: all FS access goes through `internal/audit`. |
-| I2 | Never writes outside `$XDG_STATE_HOME/tenant`. It never edits `.zshrc`, `$HISTFILE` or any other file of yours. | Landlock. The history ghost lives only in the line editor. |
+| I2 | Never writes outside `$XDG_STATE_HOME/tenant`. It never edits `.bashrc`, `.zshrc`, `$HISTFILE` or any other file of yours. | Landlock. The history ghost lives only in the line editor. |
 | I3 | Never uses the network | No `net` import (CI check). Landlock TCP rules on ABI v4+ (kernel 6.7+). |
 | I4 | Never runs other programs | No `os/exec` import (CI check). Landlock blocks `execute`. |
 | I5 | The hook never `eval`s runtime output from the binary | Hook protocol: fixed verbs plus integers, `case` dispatch, assignment-only text. Reviewed and pty-tested. |
-| I6 | Never wraps, aliases or replaces your commands | Hook review. The only function it defines under a shell-reserved name is `command_not_found_handler`, which delegates to your existing handler. |
+| I6 | Never wraps, aliases or replaces your commands | Hook review. The only functions it defines under shell-reserved names are the not-found hooks (`command_not_found_handle` in bash, `command_not_found_handler` in zsh), which delegate to your existing handler. |
 | I7 | The audit log is complete and truthful | Every read and write goes through `internal/audit`, which logs before acting. `confess` prints it verbatim. |
 | I8 | Inert unless started; inert as root; inert with `TENANT_OFF=1`; `evict` takes effect in every shell straight away | Sentinel file checked in pure shell. EUID check in both the hook and the binary. |
 | I9 | Anything printed to your terminal that came from your filesystem is sanitised | `internal/term`: control characters and escape sequences are stripped, and length is capped |
@@ -36,15 +36,17 @@ honest log of everything it has looked at, and hands it over whenever you ask.
 - The system time zone (`/etc/localtime`), read by the Go runtime before the sandbox
   is applied. `confess` discloses this too.
 
-It does **not** read `$HISTFILE` (this is the recommended default and depends on
-open question Q1 in [DECISIONS](DECISIONS.md)). What it knows about your habits, it
-learned by watching during the dormancy period.
+It does **not** read `$HISTFILE`, ever (D11 in [DECISIONS](DECISIONS.md)). What it
+knows about your habits, it learned by watching during the dormancy period. On bash,
+the hook finds the command you just ran from the shell's in-memory `history 1`,
+inside the shell, and passes on only its first word. Commands you start with a space
+are never seen if your shell keeps them out of history.
 
 ## Exactly what it writes
 
 Only files under `~/.local/state/tenant` (see
 [ARCHITECTURE](ARCHITECTURE.md#state)). `tenant evict` deletes that directory
-completely. The one line in `.zshrc` is yours to add and yours to remove. tenant
+completely. The one line in your rc file is yours to add and yours to remove. tenant
 never touches it.
 
 ## Landlock sandbox
@@ -65,18 +67,21 @@ config), then restricts itself before it does anything that depends on your file
   `sandbox: unavailable (kernel 5.10), enforced by code only`.
 - The **hook script is not sandboxed.** It runs inside your shell with your
   privileges. Its safety comes from being short, using builtins only, `eval`ing
-  nothing, and being printable for review with `tenant init zsh | less`.
+  nothing, and being printable for review with `tenant init bash | less`.
 
 ## Shell-side safety
 
-- **No runtime eval.** The one `eval` is in your `.zshrc`, and it evaluates the
-  static script from `tenant init zsh`, which doesn't depend on your files or state.
+- **No runtime eval.** The one `eval` is in your rc file, and it evaluates the
+  static script from `tenant init <shell>`, which doesn't depend on your files or
+  state.
 - **Integers, not strings.** Actions that change `PROMPT` carry only indices and
   codepoints. The shell computes the text itself from `$PWD`.
 - **Escaping.** Anything placed in `PROMPT` or `RPROMPT` has `%`, `$`, backtick and
   `\` escaped. This matters when `PROMPT_SUBST` is set, where an unescaped
   directory called `$(rm -rf ~)` would otherwise run.
-- **`$?` preserved.** precmd returns the status it received.
+- **`$?` preserved.** The prompt hook returns the status it received. On bash, a
+  tiny status-capturing function is prepended to `PROMPT_COMMAND` so that other
+  frameworks don't clobber `$?` first.
 - **Adversarial names** are part of the test suite (see
   [ARCHITECTURE](ARCHITECTURE.md#testing)).
 
@@ -117,10 +122,10 @@ characters, ESC sequences and bidi overrides, and truncates the result. A file n
 ## Verify it yourself
 
 ```sh
-tenant init zsh | less                     # read the whole hook
+tenant init bash | less                    # read the whole hook
 tenant doctor                              # sandbox status, probes, latency
 strace -f -e trace=openat,connect,execve \
-  tenant _hook precmd --status 0 --cmd ls --shape ls:plain
+  tenant _hook prompt --shell bash --status 0 --cmd ls --shape ls:plain
 ```
 
 ## Reporting a vulnerability

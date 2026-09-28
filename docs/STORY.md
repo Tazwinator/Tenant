@@ -5,8 +5,8 @@
 
 ## Premise (draft)
 
-The working title is **The Previous Tenant**. It is still a draft: see open question
-Q3 in [DECISIONS](DECISIONS.md).
+The working title is **The Previous Tenant**. Claude drafts Act 1 from this premise,
+and the maintainer edits it (D12 in [DECISIONS](DECISIONS.md)).
 
 Something lived in this home directory before you. It can't open anything. It can't
 write. It can't leave. All it can do is read names: your directories, your files,
@@ -28,7 +28,7 @@ About 20 minutes of actual content, spread over dormancy plus five sittings.
 | 1 Off | "Did I misread that?" | `prompt.glyph`, `ls.phantom` (a name that could plausibly be yours) |
 | 2 It knows | "That's… where I was." | `motd.lastlogin`, `clear.residue` |
 | 3 It speaks | "Something is talking to me." | `history.ghost`, `notfound.remark`, `title.whisper` |
-| 4 It wants | "It wants something from me." | `ls.phantom` (real names, from elsewhere), `rprompt.time`, the invitation: "you know what i'm called." |
+| 4 It wants | "It wants something from me." | `ls.phantom` (real names, from elsewhere), `prompt.time`, the invitation: "you know what i'm called." |
 | 5 Confrontation | "I have to deal with this." | `finale.summon`, then `confess.epilogue` |
 
 That's eight wrong-thing mechanics, the finale and the epilogue. Required beats are
@@ -60,7 +60,7 @@ These are the only facts the engine knows, exposed as template variables:
 
 | Variable | Example |
 |---|---|
-| `{{user}}` | `taylor` |
+| `{{user}}` | `sam` |
 | `{{host}}` | `zireael` |
 | `{{cwd}}` | `~/code/rarepulls` |
 | `{{names.here}}` | names in cwd |
@@ -99,4 +99,9 @@ text      {{names.elsewhere}}
 
 Act 1 (this five-sitting story) is free and open source, because it has to be for
 trust. A longer paid story (about $5 on itch.io) would ship later as a **data-only
-story pack** that you can read in full before installing. See open question Q5.
+story pack** that you can read in full before installing. It is separate from this
+repo and has its own terms (D14 in [DECISIONS](DECISIONS.md)).
+
+One possible shape for the paid story: **it gets out.** Act 1 lives in the terminal.
+A later act follows you onto the desktop (notifications, window titles), through
+the same binary. See [PLATFORMS](PLATFORMS.md).

@@ -3,12 +3,14 @@
 > Something has been living in your shell. It can only read names.
 
 `tenant` is a slow-burn horror story that plays out over about a week inside your
-real zsh prompt, history and login message. It uses your real directory names and
-the commands you actually run, which is what makes it land.
+real shell prompt and login message. It uses your real directory names and the
+commands you actually run, which is what makes it land. It runs in bash and zsh on
+Linux.
 
-It never reads the contents of your files. It never writes anywhere except its own
-state directory. It never touches the network. At any time, `tenant confess`
-prints everything it has ever looked at, and `tenant evict` removes it cleanly.
+It never reads the contents of your files, including your shell history. It never
+writes anywhere except its own state directory. It never touches the network. At
+any time, `tenant confess` prints everything it has ever looked at, and `tenant
+evict` removes it cleanly.
 
 ```
 ~/code/rarepulls $ ls
@@ -21,11 +23,12 @@ cmd/  internal/  web/  go.mod  go.sum
 ```
 <sub>An illustration of the mechanic, not a real transcript.</sub>
 
-**Status: planning.** Nothing here runs yet. See [the roadmap](docs/ROADMAP.md).
+**Status: planning.** Nothing here runs yet. It is aiming for Halloween 2026. See
+[the roadmap](docs/ROADMAP.md).
 
 ## How it plays
 
-1. Install it, add one line to `~/.zshrc`, and run `tenant start`.
+1. Install it, add one line to your shell's rc file, and run `tenant start`.
 2. For a day or two, nothing happens.
 3. Then, rarely and on a seeded schedule, the terminal starts doing small wrong
    things. A prompt that's one character off. An `ls` entry that isn't there when
@@ -50,9 +53,12 @@ yay -S tenant
 CGO_ENABLED=0 go install github.com/Tazwinator/Tenant/cmd/tenant@latest
 ```
 
-```zsh
-# ~/.zshrc, as the last line. Read what it does first: tenant init zsh | less
-eval "$(tenant init zsh)"
+Add one line as the last line of your rc file. You can read what it does first with
+`tenant init bash | less`.
+
+```sh
+eval "$(tenant init bash)"   # ~/.bashrc  (bash 5.1+)
+eval "$(tenant init zsh)"    # ~/.zshrc
 ```
 
 ```sh
@@ -64,7 +70,7 @@ tenant start --compressed  # the whole arc in about 30 minutes (streamers, revie
 
 | Command | What it does |
 |---|---|
-| `tenant init zsh` | Prints the zsh hook script. It is short, uses only shell builtins, and does nothing until you run `tenant start`. |
+| `tenant init bash\|zsh` | Prints the hook script. It is short, uses only shell builtins, and does nothing until you run `tenant start`. |
 | `tenant start [--compressed]` | Your consent. Creates the seed and state, then goes quiet. |
 | `tenant evict` | Safeword. See above. |
 | `tenant confess [--summary]` | The audit log. See above. |
@@ -78,10 +84,14 @@ current directory and the first word of each command you run; briefly change you
 prompt or window title; print a line before your prompt; pre-fill a single press
 of the Up arrow.
 
-**Can't:** read file contents, write outside `~/.local/state/tenant`, open network
-connections, run other programs, or wrap, alias or replace your commands. On Linux
-with Landlock (kernel 5.13+) the file and network rules are enforced by the kernel,
-not just promised. The details are in [SECURITY.md](docs/SECURITY.md).
+**Can't:** read file contents (it never opens your history file either), write
+outside `~/.local/state/tenant`, open network connections, run other programs, or
+wrap, alias or replace your commands. On Linux with Landlock (kernel 5.13+) the file
+and network rules are enforced by the kernel, not just promised. The details are in
+[SECURITY.md](docs/SECURITY.md).
+
+**Doesn't see:** commands you start with a space, if your shell is set to leave
+those out of history (`HISTCONTROL=ignorespace` or `setopt HIST_IGNORE_SPACE`).
 
 **Stays quiet:** in root shells, in any shell with `TENANT_OFF=1`, outside `$HOME`,
 and in the middle of a git rebase.
@@ -90,14 +100,16 @@ and in the middle of a git rebase.
 
 | Doc | Covers |
 |---|---|
-| [ARCHITECTURE](docs/ARCHITECTURE.md) | The binary, the zsh hook, the hook protocol, state, performance |
+| [ARCHITECTURE](docs/ARCHITECTURE.md) | The engine, the shell hooks, the hook protocol, state, performance |
 | [SCHEDULER](docs/SCHEDULER.md) | Seeded pacing, sittings, the haunting budget, compressed mode |
-| [EVENTS](docs/EVENTS.md) | Every "wrong thing", and exactly how each one is done in zsh |
+| [EVENTS](docs/EVENTS.md) | Every "wrong thing", and exactly how each one is done in bash and zsh |
 | [SECURITY](docs/SECURITY.md) | Threat model, invariants, Landlock sandbox, how to verify it yourself |
 | [STORY](docs/STORY.md) | Story structure and writing rules. Light spoilers; the script lives in `story/` |
+| [PLATFORMS](docs/PLATFORMS.md) | Why terminal first, and how macOS, Windows or a desktop version would fit later |
 | [ROADMAP](docs/ROADMAP.md) | Phases, the teaser test, kill criteria, launch, money |
 | [DECISIONS](docs/DECISIONS.md) | Decision log and open questions |
 
 ## Licence
 
-To be decided. See [DECISIONS](docs/DECISIONS.md).
+[MIT](LICENSE), including the free Act 1 story. Future paid story content will be
+distributed separately under its own terms.

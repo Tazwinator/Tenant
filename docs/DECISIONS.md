@@ -20,6 +20,7 @@ This removes the whole class of injection bugs that come from hostile filenames.
 **D4. The history ghost uses a zle widget, not `print -s`.**
 `print -s` gets persisted to `$HISTFILE`, which would break "wrote nothing". A
 widget that pre-fills one press of Up gives the same scare and writes nothing.
+(D15 extends this to bash: `bind -x` and `READLINE_LINE`, never `history -s`.)
 
 **D5. Never wrap your commands.**
 Effects are added around commands (before the prompt, in the prompt, in the title),
@@ -47,34 +48,49 @@ feature and the ending, so it can't bend.
 The binary carries Act 1. Story packs (later) are data files that can only reference
 audited mechanics.
 
+**D11. Never read the history file (answers Q1).**
+It learns only by watching during dormancy. "Never opens a file of yours" is absolute
+and kernel-enforced. We give up "it knows your past" beats. Commands started with a
+space are invisible to it where the shell honours `ignorespace`.
+
+**D12. Claude drafts Act 1, and the maintainer edits (answers Q3).**
+The draft goes in `story/`, following the rules in [STORY](STORY.md#writing-rules).
+
+**D13. Aim for Halloween 2026 (answers Q4).**
+The dates in the [roadmap](ROADMAP.md) hold. If the teaser kill check fails, we park
+it until October 2027.
+
+**D14. MIT for the whole repo, including Act 1 (answers Q5).**
+Paid story content will be distributed separately in the future, under its own terms,
+and never lives in this repo.
+
+**D15. Bash first, then zsh, both before launch (partly answers Q2).**
+Zireael runs bash, and the weekend prototype must be something the maintainer lives
+with. zsh follows in the MVP phase, for the r/unixporn crowd and macOS. The minimum is
+bash 5.1, for array `PROMPT_COMMAND`.
+
+**D16. Terminal first; no GUI before launch, and never a second app.**
+The reasoning is in [PLATFORMS](PLATFORMS.md). The engine and surface split keeps
+the door open: any future desktop, macOS or Windows support is a new surface in the
+same binary.
+
+**D17. Five terminal-using testers, recruited from outside the friend group.**
+The maintainer's friends mostly don't use terminals, so the kill test recruits from
+the teaser's "want to test" issue and Linux communities instead.
+
 ## Open questions
 
-**Q1. Should it read `$HISTFILE`?**
-The recommendation is **no**: it learns only by watching during dormancy. That makes
-"never opens a file of yours" absolute and enforceable by the kernel. The cost is
-losing "it knows your past" beats, such as "you haven't run `make` since March".
-The docs currently assume no.
-
-**Q2. Which prompt and plugins does Zireael run?**
-This decides which `prompt.glyph` and `history.ghost` adapters the weekend
-prototype needs first: plain `%~`, grml, oh-my-zsh, pure, starship or p10k, and
-whether zsh-autosuggestions or history-substring-search is in use. It also matters
-whether `ls` is aliased to `eza` or `lsd`.
-
-**Q3. Who writes the story?**
-The writing is the moat. Either you write the script and I build the engine and the
-tooling, or I draft Act 1 from the premise in [STORY](STORY.md) for you to rewrite.
-
-**Q4. Are we aiming for Halloween 2026?**
-It's 33 days away, and the [roadmap](ROADMAP.md) dates assume yes. It's tight but
-realistic for the MVP cut. The alternative is to build without a deadline and launch
-in October 2027.
-
-**Q5. What licence, and how do we split paid content?**
-The suggestion is GPL-3.0 or MIT for the engine, and Act 1 under CC BY-NC-SA, all in
-this repo. The paid full story would live outside the repo as a data-only pack.
+**Q2. What does Zireael's bash setup look like?**
+Is it a plain `PS1`, starship, oh-my-bash or bash-it? Does it use ble.sh, atuin,
+fzf's Ctrl-R or history bindings, or bash-preexec? Is `ls` aliased to `eza`? This
+decides which adapters the weekend prototype needs first.
 
 **Q6 (minor). Module path casing.**
 The repo is `Tazwinator/Tenant`. Go module paths are case-sensitive, and a
 lowercase `tenant` repo would make `go install` URLs nicer. It's cheap to rename now
 and annoying later.
+
+## Answered
+
+Q1 was answered by D11, Q3 by D12, Q4 by D13 and Q5 by D14. Q2 was partly answered
+by D15.
